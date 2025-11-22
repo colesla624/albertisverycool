@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Third Person Platformer</title>
+<title>Third Person Multi‑Level Platformer</title>
 <style>
   html, body { margin:0; height:100%; overflow:hidden; background:#0b1026; }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); font-size:14px; color:#e9ecff; }
   .stick {
     position:fixed; bottom:16px; width:120px; height:120px; border-radius:50%;
     background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
@@ -24,6 +25,7 @@
 </style>
 </head>
 <body>
+<div id="hud">Level: <span id="level">1</span> | Crystals: <span id="score">0</span></div>
 <div id="stickLeft" class="stick"><div class="knob"></div></div>
 <div id="stickRight" class="stick"><div class="knob"></div></div>
 <button id="btnJump">Jump</button>
@@ -45,29 +47,19 @@
   dir.position.set(40,50,25);
   scene.add(dir);
 
-  // Ground
-  const ground = new THREE.Mesh(new THREE.BoxGeometry(40,2,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
+  const matGround = new THREE.MeshStandardMaterial({ color:0x1b2250 });
+  const matPlat = new THREE.MeshStandardMaterial({ color:0x61e1ff, emissive:0x103a46, emissiveIntensity:0.25 });
+  const matCrystal = new THREE.MeshStandardMaterial({ color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6 });
+  const matPlayer = new THREE.MeshStandardMaterial({ color:0xff7aa2 });
+
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(80,2,80), matGround);
   ground.position.y=-1;
   scene.add(ground);
 
-  // Platforms
-  const platforms=[];
-  function addPlatform(x,y,z){
-    const p=new THREE.Mesh(new THREE.BoxGeometry(8,1,8), new THREE.MeshStandardMaterial({color:0x61e1ff}));
-    p.position.set(x,y,z);
-    scene.add(p);
-    platforms.push(p);
-  }
-  addPlatform(0,2,-10);
-  addPlatform(12,4,-15);
-  addPlatform(-8,3,-20);
-
-  // Player
-  const player={pos:new THREE.Vector3(0,2,5), vel:new THREE.Vector3(), yaw:0, grounded:false, speed:6, jumpVel:15}; // jump 2x stronger
-  const playerMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.5,1,8,16),new THREE.MeshStandardMaterial({color:0xff7aa2}));
+  const player={pos:new THREE.Vector3(0,2,5), vel:new THREE.Vector3(), yaw:0, grounded:false, speed:6, jumpVel:15};
+  const playerMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.5,1,8,16),matPlayer);
   scene.add(playerMesh);
 
-  // Camera follow
   const camOffset=new THREE.Vector3(0,2.5,6.5);
   function updateCamera(){
     const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
@@ -76,7 +68,6 @@
     camera.lookAt(player.pos);
   }
 
-  // Joysticks
   let moveStick={x:0,y:0}, lookStick={x:0,y:0};
   function setupStick(el,onMove){
     const knob=el.querySelector(".knob"); let active=false;
@@ -87,17 +78,15 @@
       const r=50,mag=Math.hypot(dx,dy),cl=mag>r?r/mag:1; const nx=dx*cl,ny=dy*cl;
       knob.style.transform=`translate(${nx}px,${ny}px) translate(-50%,-50%)`; onMove(nx/r,ny/r); e.preventDefault();
     },{passive:false});
-    function reset(){active=false;knob.style.transform="translate(-50%,-50%)";onMove(0,0);}
+    function reset(){active=false;knob.style.transform="translate(-50%,-50%";onMove(0,0);}
     el.addEventListener("touchend",reset,{passive:true});
     el.addEventListener("touchcancel",reset,{passive:true});
   }
   setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
   setupStick(document.getElementById("stickRight"),(x,y)=>{lookStick.x=x;lookStick.y=y;});
 
-  // Jump button
   document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=player.jumpVel;player.grounded=false;}});
 
-  // Collision check
   function getAABB(mesh){
     mesh.geometry.computeBoundingBox();
     const bb=mesh.geometry.boundingBox.clone();
@@ -121,7 +110,34 @@
     }
   }
 
-  // Loop
+  let platforms=[], crystals=[], level=1, score=0;
+  const scoreEl=document.getElementById("score"), levelEl=document.getElementById("level");
+
+  function addPlatform(x,y,z){const m=new THREE.Mesh(new THREE.BoxGeometry(8,1,8),matPlat);m.position.set(x,y,z);scene.add(m);platforms.push(m);}
+  function addCrystal(x,y,z){const c=new THREE.Mesh(new THREE.ConeGeometry(0.6,1.6,10),matCrystal);c.position.set(x,y+1.2,z);scene.add(c);crystals.push(c);}
+
+  function buildLevel(n){
+    platforms.forEach(p=>scene.remove(p)); crystals.forEach(c=>scene.remove(c));
+    platforms=[]; crystals=[];
+    if(n===1){
+      addPlatform(0,2,-10); addPlatform(12,4,-15); addPlatform(-8,3,-20);
+      addCrystal(12,5,-15); addCrystal(-8,4,-20);
+    }
+    if(n===2){
+      addPlatform(-10,2,-10); addPlatform(-20,4,-20); addPlatform(-30,6,-30);
+      addCrystal(-20,5,-20); addCrystal(-30,7,-30);
+    }
+    if(n===3){
+      addPlatform(10,2,10); addPlatform(20,4,20); addPlatform(30,6,30);
+      addCrystal(20,5,20); addCrystal(30,7,30);
+    }
+    levelEl.textContent=n;
+    score=0; scoreEl.textContent=score;
+    player.pos.set(0,2,5); player.vel.set(0,0,0);
+  }
+
+  buildLevel(level);
+
   function loop(){
     requestAnimationFrame(loop);
     const dt=0.016;
@@ -130,15 +146,4 @@
     const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
     player.pos.x+=(str*cos+fwd*sin)*player.speed*dt;
     player.pos.z+=(str*-sin+fwd*cos)*player.speed*dt;
-    player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt;
-    checkCollisions();
-    playerMesh.position.copy(player.pos);
-    player.yaw-=lookStick.x*2.5*dt;
-    updateCamera();
-    renderer.render(scene,camera);
-  }
-  loop();
-})();
-</script>
-</body>
-</html>
+    player.vel.y-=9.8*dt; player
