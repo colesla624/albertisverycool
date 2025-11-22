@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>3D FPS Game With Levels — Press E to Start</title>
+<title>3D FPS Game With Levels</title>
 <style>
     body { margin: 0; overflow: hidden; background: #000; }
-    #instructions, #levelMsg {
+    #levelMsg {
         position: absolute;
         top: 50%; left: 50%;
         transform: translate(-50%, -50%);
@@ -15,15 +15,12 @@
         background: rgba(0,0,0,0.5);
         padding: 20px;
         border-radius: 10px;
+        display: none;
     }
-    #levelMsg { display: none; }
 </style>
 </head>
 <body>
-<div id="instructions">
-    <h2>Press E to Start</h2>
-    <p>W A S D = Move<br>Mouse = Look</p>
-</div>
+
 <div id="levelMsg"><h2>Level Complete!</h2></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
@@ -109,21 +106,15 @@ function init() {
 }
 
 /* ---------------------------------------------------------
-   POINTER LOCK — PRESS E TO START
+   POINTER LOCK — auto on first click
 ---------------------------------------------------------*/
 function setupPointerLock() {
-    const instructions = document.getElementById("instructions");
-
-    // Press E to begin control
-    document.addEventListener("keydown", (e) => {
-        if (e.code === "KeyE" && !controlsEnabled) {
-            renderer.domElement.requestPointerLock();
-        }
+    document.addEventListener("click", () => {
+        renderer.domElement.requestPointerLock();
     });
 
     document.addEventListener("pointerlockchange", () => {
         controlsEnabled = (document.pointerLockElement === renderer.domElement);
-        instructions.style.display = controlsEnabled ? "none" : "block";
     });
 
     document.addEventListener("mousemove", (e) => {
@@ -268,7 +259,7 @@ function animate() {
 }
 
 /* ---------------------------------------------------------
-   HANDLE RESIZE
+   RESIZE
 ---------------------------------------------------------*/
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
