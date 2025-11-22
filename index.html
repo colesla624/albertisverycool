@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>2D Platformer</title>
+  <title>Detailed 2D Platformer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <style>
     body { margin:0; background:#1b1e26; overflow:hidden; }
@@ -39,6 +39,9 @@ function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeigh
 window.addEventListener('resize',resize);resize();
 
 const TILE=32,GRAVITY=1500,MOVE_SPEED=250,JUMP_SPEED=600;
+let score=0,lives=3;
+
+// Level data
 const levels=[
   {
     name:"Level 1",
@@ -49,22 +52,14 @@ const levels=[
       if(y===13){row[8]=1;row[12]=1;row[16]=1;row[20]=1;row[24]=1;}
       return row;
     }),
-    start:{x:TILE*2,y:TILE*10}
-  },
-  {
-    name:"Level 2",
-    width:32,height:16,
-    tiles:Array.from({length:16},(_,y)=>{
-      const row=Array(32).fill(0);
-      if(y===15){row.fill(1);row[2]=3;row[28]=4;}
-      if(y===13){row[6]=1;row[10]=1;row[14]=1;row[18]=1;row[22]=1;}
-      if(y===14){row[12]=2;row[20]=2;}
-      return row;
-    }),
-    start:{x:TILE*2,y:TILE*10}
+    start:{x:TILE*2,y:TILE*10},
+    coins:[{x:300,y:400,collected:false},{x:500,y:300,collected:false}],
+    enemies:[{x:400,y:450,w:24,h:28,dir:1}]
   }
 ];
 let levelIndex=0;
+
+// Player
 const player={x:0,y:0,w:24,h:28,vx:0,vy:0,onGround:false};
 function loadLevel(i){
   levelIndex=i%levels.length;
@@ -116,8 +111,21 @@ function loop(now){
   // Tile collision
   const t=tileAt(player.x+player.w/2,player.y+player.h);
   if(t===1||t===3||t===4){player.y=Math.floor((player.y+player.h)/TILE)*TILE-player.h;player.vy=0;player.onGround=true;}
-  if(t===2){loadLevel(levelIndex);} // hazard resets
+  if(t===2){lives--;loadLevel(levelIndex);} // hazard resets
   if(t===4){loadLevel(levelIndex+1);} // goal advances
+  // Coins
+  for(const c of levels[levelIndex].coins){
+    if(!c.collected&&player.x< c.x && player.x+player.w>c.x && player.y< c.y && player.y+player.h>c.y){
+      c.collected=true;score+=10;
+    }
+  }
+  // Enemies
+  for(const e of levels[levelIndex].enemies){
+    e.x+=e.dir*60*dt;if(e.x<380||e.x>420)e.dir*=-1;
+    if(player.x<e.x+e.w&&player.x+player.w>e.x&&player.y<e.y+e.h&&player.y+player.h>e.y){
+      lives--;loadLevel(levelIndex);
+    }
+  }
   draw();
   requestAnimationFrame(loop);
 }
@@ -132,12 +140,19 @@ function draw(){
       const t=L.tiles[y][x];if(!t)continue;
       const px=x*TILE,py=y*TILE;
       if(t===1){ctx.fillStyle="#3b4252";ctx.fillRect(px,py,TILE,TILE);}
-      if(t===2){ctx.fillStyle="#b71c1c";ctx.fillRect(px,py,TILE,TILE);}
+      if(t===2){ctx.fillStyle=(Math.floor(Date.now()/200)%2?"#b71c1c":"#ff7043");ctx.fillRect(px,py,TILE,TILE);}
       if(t===3){ctx.fillStyle="#2e7d32";ctx.fillRect(px,py,TILE,TILE);}
       if(t===4){ctx.fillStyle="#1e88e5";ctx.fillRect(px,py,TILE,TILE);}
     }
   }
+  // Coins
+  for(const c of L.coins){if(!c.collected){ctx.fillStyle="#ffd700";ctx.beginPath();ctx.arc(c.x,c.y,10,0,Math.PI*2);ctx.fill();}}
+  // Enemies
+  ctx.fillStyle="#e63946";for(const e of L.enemies){ctx.fillRect(e.x,e.y,e.w,e.h);}
+  // Player
   ctx.fillStyle="#ffd166";ctx.fillRect(player.x,player.y,player.w,player.h);
+  // HUD
+  ctx.fillStyle="#fff";ctx.font="20px Arial";ctx.fillText("Score: "+score,20,30);ctx.fillText("Lives: "+lives,20,60);
 }
 </script>
 </body>
