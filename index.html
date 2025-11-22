@@ -12,6 +12,10 @@
       color: #e7e7ff; font-family: system-ui, sans-serif; font-size: 16px;
       text-shadow: 0 0 6px rgba(170,170,255,0.7);
     }
+    #tip {
+      position: absolute; top: 10px; right: 10px; color: #a9a9ff; font-size: 12px; opacity: 0.8;
+      font-family: system-ui, sans-serif;
+    }
     #controls {
       position: absolute; bottom: 20px; left: 20px; right: 20px;
       display: flex; justify-content: space-between; align-items: center;
@@ -31,10 +35,6 @@
       width: 120px; height: 120px; border-radius: 60px;
       background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.25), rgba(255,255,255,0.08));
       color: #fff; font-size: 20px; display: grid; place-items: center; user-select: none;
-    }
-    #tip {
-      position: absolute; top: 10px; right: 10px; color: #a9a9ff; font-size: 12px; opacity: 0.8;
-      font-family: system-ui, sans-serif;
     }
   </style>
 </head>
@@ -128,6 +128,11 @@
       onGround: false
     };
 
+    // Spawn directly on first platform
+    const startPlat = platforms[0];
+    const startTopY = startPlat.mesh.position.y + startPlat.h/2;
+    player.pos.set(startPlat.mesh.position.x, startTopY + player.radius, startPlat.mesh.position.z);
+
     // Input state
     const keys = {};
     document.addEventListener('keydown', e => { keys[e.code] = true; });
@@ -154,9 +159,7 @@
     const moveStick = document.getElementById('moveStick');
     const jumpBtn = document.getElementById('jumpBtn');
     let moveActive = false, moveBase = {x:0,y:0}, moveVec = {x:0,y:0};
-    function setStick(dx, dy) {
-      moveStick.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
+    function setStick(dx, dy) { moveStick.style.transform = `translate(${dx}px, ${dy}px)`; }
     function clamp(n, max) { return Math.max(-max, Math.min(max, n)); }
 
     movePad.addEventListener('touchstart', e => {
@@ -197,59 +200,55 @@
 
     // Movement helpers
     function getMoveInput() {
-      // Desktop WASD
       let mx = 0, mz = 0;
       if (keys['KeyW']) mz -= 1;
       if (keys['KeyS']) mz += 1;
       if (keys['KeyA']) mx -= 1;
       if (keys['KeyD']) mx += 1;
-      // Mobile pad adds vector
       mx += moveVec.x;
       mz += moveVec.y;
-      // Normalize
       const len = Math.hypot(mx, mz);
       return len > 1 ? {x: mx/len, z: mz/len} : {x: mx, z: mz};
     }
     function tryJump() {
       if (player.onGround) {
-        player.vel.y = 5.4; // dream-boosted jump
+        player.vel.y = 5.4;
         player.onGround = false;
       }
     }
     document.addEventListener('keydown', e => { if (e.code === 'Space') tryJump(); });
 
-    // Physics params (dreamlike)
-    const GRAVITY = -6.5;      // slower than reality
-    const MOVE_SPEED = 6.5;    // walking speed
-    const AIR_CONTROL = 0.35;  // limited air control
+    // Physics params
+    const GRAVITY = -6.5;
+    const MOVE_SPEED = 6.5;
+    const AIR_CONTROL = 0.35;
 
-    // Simple AABB collision against platforms
+    // Precise AABB top-surface collision
     function collidePlatforms(nextPos, vel) {
       player.onGround = false;
+
       for (const p of platforms) {
         const m = p.mesh;
         const half = { x: p.w/2, y: p.h/2, z: p.d/2 };
         const min = new THREE.Vector3(m.position.x - half.x, m.position.y - half.y, m.position.z - half.z);
         const max = new THREE.Vector3(m.position.x + half.x, m.position.y + half.y, m.position.z + half.z);
 
-        // Check vertical (feet) landing: sphere vs AABB simplified
-        const withinX = nextPos.x > min.x - player.radius && nextPos.x < max.x + player.radius;
-        const withinZ = nextPos.z > min.z - player.radius && nextPos.z < max.z + player.radius;
+        // Horizontal overlap considering player radius
+        const withinX = nextPos.x > (min.x - player.radius) && nextPos.x < (max.x + player.radius);
+        const withinZ = nextPos.z > (min.z - player.radius) && nextPos.z < (max.z + player.radius);
 
         if (withinX && withinZ) {
-          // Coming down onto top surface
           const top = max.y;
-          if (player.pos.y >= top - 0.2 && nextPos.y <= top + player.radius) {
-            nextPos.y = top + player.radius;
+          const descending = vel.y <= 0;
+          const wasAboveTop = (player.pos.y - player.radius) >= (top - 0.05);
+          const crossesTop = (nextPos.y - player.radius) <= top;
+
+          if (descending && wasAboveTop && crossesTop) {
+            nextPos.y = top + player.radius; // stand on top
             vel.y = 0;
             player.onGround = true;
           }
         }
-
-        // Simple horizontal clamp to keep from phasing through edges
-        // (prevents falling through thin edges while moving fast)
-        nextPos.x = Math.min(Math.max(nextPos.x, min.x - player.radius), max.x + player.radius);
-        nextPos.z = Math.min(Math.max(nextPos.z, min.z - player.radius), max.z + player.radius);
       }
     }
 
@@ -264,7 +263,6 @@
           orbs.splice(i, 1);
           collected++;
         } else {
-          // gentle float animation
           o.position.y += Math.sin(performance.now()*0.002 + i) * 0.003;
         }
       }
@@ -277,7 +275,7 @@
       hud.textContent = `Time: ${timeSurvived.toFixed(1)}s · Orbs: ${collected}/5`;
     }
 
-    // Animate dream sky tint
+    // Atmosphere shift
     function updateAtmosphere(t) {
       const hue = (Math.sin(t*0.0003)*0.5+0.5)*0.2 + 0.6;
       dir.color.setHSL(hue, 0.45, 0.75);
@@ -297,7 +295,7 @@
       const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
       const right   = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
 
-      // Movement input
+      // Movement input -> desired velocity
       const input = getMoveInput();
       const wish = new THREE.Vector3(
         right.x * input.x + forward.x * input.z,
@@ -305,7 +303,6 @@
         right.z * input.x + forward.z * input.z
       );
 
-      // Apply acceleration
       const accel = player.onGround ? MOVE_SPEED : MOVE_SPEED * AIR_CONTROL;
       player.vel.x = THREE.MathUtils.damp(player.vel.x, wish.x * accel, 8, dt);
       player.vel.z = THREE.MathUtils.damp(player.vel.z, wish.z * accel, 8, dt);
@@ -320,9 +317,9 @@
       collidePlatforms(nextPos, player.vel);
 
       // Death if fall off
-      if (player.pos.y < -30) {
-        // Reset to start island
-        player.pos.set(0, 2, 2);
+      if (nextPos.y < -30) {
+        const topY = startPlat.mesh.position.y + startPlat.h/2;
+        nextPos.set(startPlat.mesh.position.x, topY + player.radius, startPlat.mesh.position.z);
         player.vel.set(0,0,0);
       }
 
