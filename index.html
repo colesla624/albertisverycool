@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>3D Platformer (Bug Fixed)</title>
+<title>First Person Platformer</title>
 <style>
   body { margin:0; overflow:hidden; background:#0b1026; }
   #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); color:#e9ecff; font-family:sans-serif; }
@@ -22,7 +22,7 @@
 <script>
 (() => {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
   const renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
@@ -36,28 +36,34 @@
   const ground = new THREE.Mesh(new THREE.BoxGeometry(40,1,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
   ground.position.y=-0.5; scene.add(ground);
 
-  // Platforms
+  // Platforms (simplified, reachable)
   const platforms=[];
   function addPlatform(x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(6,1,6), new THREE.MeshStandardMaterial({color:0x61e1ff})); m.position.set(x,y,z); scene.add(m); platforms.push(m); }
-  addPlatform(5,2,0); addPlatform(12,4,0); addPlatform(20,6,0);
+  addPlatform(5,2,0); addPlatform(10,3,0); addPlatform(15,4,0);
 
   // Crystals
   const crystals=[];
   function addCrystal(x,y,z){ const geo=new THREE.ConeGeometry(0.5,1.5,6); const mat=new THREE.MeshStandardMaterial({color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6}); const c=new THREE.Mesh(geo,mat); c.position.set(x,y+1,z); scene.add(c); crystals.push(c); }
-  addCrystal(12,4,0); addCrystal(20,6,0);
+  addCrystal(10,3,0); addCrystal(15,4,0);
 
   // Player
-  const player={pos:new THREE.Vector3(0,1.7,2),vel:new THREE.Vector3(),radius:0.6,grounded:false};
-  const pMesh=new THREE.Mesh(new THREE.SphereGeometry(player.radius,16,16), new THREE.MeshStandardMaterial({color:0xbdf4ff}));
-  scene.add(pMesh);
-
-  // Camera offset
-  const camOffset=new THREE.Vector3(10,8,15);
+  const player={pos:new THREE.Vector3(0,1.7,2),vel:new THREE.Vector3(),yaw:0,pitch:0,grounded:false};
+  let score=0; const scoreEl=document.getElementById("score");
 
   // Input
-  const keys={left:false,right:false,up:false,down:false,space:false};
-  window.addEventListener("keydown",e=>{if(e.key==="ArrowLeft"||e.key==="a")keys.left=true;if(e.key==="ArrowRight"||e.key==="d")keys.right=true;if(e.key==="ArrowUp"||e.key==="w")keys.up=true;if(e.key==="ArrowDown"||e.key==="s")keys.down=true;if(e.key===" ")keys.space=true;});
-  window.addEventListener("keyup",e=>{if(e.key==="ArrowLeft"||e.key==="a")keys.left=false;if(e.key==="ArrowRight"||e.key==="d")keys.right=false;if(e.key==="ArrowUp"||e.key==="w")keys.up=false;if(e.key==="ArrowDown"||e.key==="s")keys.down=false;if(e.key===" ")keys.space=false;});
+  const keys={w:false,a:false,s:false,d:false,space:false};
+  window.addEventListener("keydown",e=>{if(e.key==="w")keys.w=true;if(e.key==="a")keys.a=true;if(e.key==="s")keys.s=true;if(e.key==="d")keys.d=true;if(e.key===" ")keys.space=true;});
+  window.addEventListener("keyup",e=>{if(e.key==="w")keys.w=false;if(e.key==="a")keys.a=false;if(e.key==="s")keys.s=false;if(e.key==="d")keys.d=false;if(e.key===" ")keys.space=false;});
+
+  // Pointer look
+  renderer.domElement.addEventListener("click",()=>{renderer.domElement.requestPointerLock();});
+  document.addEventListener("mousemove",e=>{
+    if(document.pointerLockElement){
+      player.yaw-=e.movementX*0.0025;
+      player.pitch-=e.movementY*0.002;
+      player.pitch=Math.max(-Math.PI/2+0.1,Math.min(Math.PI/2-0.1,player.pitch));
+    }
+  });
 
   // Touch joystick
   let moveStick={x:0,y:0};
@@ -75,10 +81,9 @@
   setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
 
   // Jump button
-  document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=5;player.grounded=false;}});
-
-  // Score
-  let score=0; const scoreEl=document.getElementById("score");
+  function attemptJump(){ if(player.grounded){ player.vel.y=5; player.grounded=false; } }
+  document.getElementById("btnJump").addEventListener("click",attemptJump);
+  document.getElementById("btnJump").addEventListener("touchstart",e=>{e.preventDefault();attemptJump();},{passive:false});
 
   // Collision check
   function checkGround(){
@@ -87,8 +92,8 @@
     for(const p of platforms){
       const bb=new THREE.Box3().setFromObject(p);
       if(player.pos.x>bb.min.x && player.pos.x<bb.max.x && player.pos.z>bb.min.z && player.pos.z<bb.max.z){
-        if(player.pos.y<=bb.max.y+player.radius && player.pos.y>=bb.max.y-0.2){
-          player.pos.y=bb.max.y+player.radius; player.vel.y=0; player.grounded=true;
+        if(player.pos.y<=bb.max.y+0.1 && player.pos.y>=bb.max.y-0.5){
+          player.pos.y=bb.max.y; player.vel.y=0; player.grounded=true;
         }
       }
     }
@@ -97,29 +102,28 @@
   // Loop
   function loop(){
     const dt=0.016; const speed=6;
-    let xMove=(keys.right?1:0)-(keys.left?1:0)+moveStick.x;
-    let zMove=(keys.down?1:0)-(keys.up?1:0)+moveStick.y;
-    const len=Math.hypot(xMove,zMove); if(len>1){xMove/=len;zMove/=len;}
-    player.pos.x+=xMove*speed*dt; player.pos.z+=zMove*speed*dt;
+    let forward=(keys.w?1:0)-(keys.s?1:0)-moveStick.y; // joystick forward/back flipped
+    let strafe=(keys.d?1:0)-(keys.a?1:0)+moveStick.x;
+    const len=Math.hypot(forward,strafe); if(len>1){forward/=len;strafe/=len;}
+    const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
+    player.pos.x+=(strafe*cos+forward*sin)*speed*dt;
+    player.pos.z+=(strafe*-sin+forward*cos)*speed*dt;
+
     player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt;
     checkGround();
 
-    // Reset if fall
     if(player.pos.y<-10){player.pos.set(0,1.7,2);player.vel.set(0,0,0);}
 
-    // Player mesh
-    pMesh.position.copy(player.pos);
+    // Camera in first person
+    camera.position.copy(player.pos);
+    camera.rotation.set(player.pitch,player.yaw,0);
 
     // Collect crystals
     for(let i=crystals.length-1;i>=0;i--){
-      if(pMesh.position.distanceTo(crystals[i].position)<1.2){
+      if(camera.position.distanceTo(crystals[i].position)<1.5){
         scene.remove(crystals[i]); crystals.splice(i,1); score++; scoreEl.textContent=score;
       }
     }
-
-    // Camera follow
-    camera.position.copy(player.pos.clone().add(camOffset));
-    camera.lookAt(player.pos);
 
     renderer.render(scene,camera);
     requestAnimationFrame(loop);
