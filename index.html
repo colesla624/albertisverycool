@@ -3,20 +3,21 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Fixed Cam 3D Platformer</title>
+<title>First Person Platformer</title>
 <style>
-  html, body { margin:0; height:100%; overflow:hidden; background:#0b1026; font-family:system-ui, sans-serif; color:#e9ecff; }
+  body { margin:0; overflow:hidden; background:#0b1026; }
   #hud {
     position:fixed; top:10px; left:50%; transform:translateX(-50%);
-    font-size:14px; text-shadow:0 2px 8px rgba(0,0,0,0.5);
+    color:#e9ecff; font-family:sans-serif; font-size:16px;
+    text-shadow:0 2px 6px rgba(0,0,0,0.6);
   }
-  #btnReset { position:fixed; top:10px; right:10px; padding:6px 10px; border-radius:8px; border:1px solid #2b2f5c; background:#202859; color:#e9ecff; }
   .stick {
     position:fixed; bottom:16px; width:120px; height:120px; border-radius:50%;
     background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18);
     touch-action:none; backdrop-filter:blur(6px);
   }
   #stickLeft { left:16px; }
+  #stickRight { right:120px; }
   .knob {
     position:absolute; left:50%; top:50%; width:54px; height:54px; border-radius:50%;
     transform:translate(-50%,-50%); background:rgba(97,225,255,0.35); border:1px solid rgba(97,225,255,0.6);
@@ -26,296 +27,129 @@
     background:linear-gradient(180deg,#2d3a7a,#202859); border:1px solid #4450a8; color:#e9ecff; font-size:16px;
     box-shadow:0 8px 20px rgba(0,0,0,0.4); touch-action:none;
   }
-  #help {
-    position:fixed; left:50%; bottom:8px; transform:translateX(-50%); font-size:12px; opacity:0.8; pointer-events:none;
-  }
 </style>
 </head>
 <body>
-<div id="hud">Level 1 • Crystals: <span id="score">0</span></div>
-<button id="btnReset">Reset</button>
+<div id="hud">Crystals: <span id="score">0</span></div>
 <div id="stickLeft" class="stick"><div class="knob"></div></div>
+<div id="stickRight" class="stick"><div class="knob"></div></div>
 <button id="btnJump">Jump</button>
-<div id="help">Mobile: left joystick to move, Jump to hop. Desktop: Arrows/WASD to move, Space to jump.</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
 (() => {
-  // Scene and renderer
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x0b1026, 35, 160);
-
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // Fixed camera: angled side view chasing player
-  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 500);
-  const camOffset = new THREE.Vector3(12, 10, 20); // fixed offset relative to world
-  camera.position.copy(camOffset);
-  camera.lookAt(0, 2, 0);
-
-  // Lights
-  const hemi = new THREE.HemisphereLight(0x8a5cff, 0x0b1026, 0.7);
-  scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-  dir.position.set(30, 40, 20);
-  dir.castShadow = true;
-  dir.shadow.mapSize.set(1024,1024);
-  scene.add(dir);
-
-  // Materials
-  const matGround = new THREE.MeshStandardMaterial({ color:0x1b2250, roughness:0.9 });
-  const matPlat = new THREE.MeshStandardMaterial({ color:0x61e1ff, emissive:0x103a46, emissiveIntensity:0.35, roughness:0.6 });
-  const matCrystal = new THREE.MeshStandardMaterial({ color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6 });
+  // Lighting
+  scene.add(new THREE.HemisphereLight(0x8a5cff, 0x0b1026, 0.7));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(20,30,10); scene.add(dir);
 
   // Ground
-  const ground = new THREE.Mesh(new THREE.BoxGeometry(100, 1, 100), matGround);
-  ground.position.set(0, -0.5, 0);
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(40,1,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
+  ground.position.y=-0.5; scene.add(ground);
 
-  // Level platforms (AABBs)
-  const platforms = [];
-  function addPlatform(x,y,z,w=6,h=1,d=6){
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), matPlat);
-    m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true;
-    scene.add(m); platforms.push(m);
+  // Platforms
+  const platforms=[];
+  function addPlatform(x,y,z){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(6,1,6), new THREE.MeshStandardMaterial({color:0x61e1ff}));
+    m.position.set(x,y,z); scene.add(m); platforms.push(m);
   }
+  addPlatform(5,2,0); addPlatform(12,4,0); addPlatform(20,6,0);
 
-  // Layout: mostly along X with some Z variation, but movement is clamped to a lane
-  addPlatform(0, 1, 0, 8, 1, 6);
-  addPlatform(10, 3, 0, 6, 1, 6);
-  addPlatform(18, 5, 0, 5, 1, 5);
-  addPlatform(26, 7, 0, 5, 1, 5);
-  addPlatform(34, 9, 0, 6, 1, 6);
-  // Branch platform (optional z): still reachable but movement clamps to lane center
-  addPlatform(42, 11, 4, 6, 1, 4);
-  addPlatform(50, 13, 0, 6, 1, 6);
-
-  // Crystals on some platforms
-  const crystals = [];
+  // Crystals
+  const crystals=[];
   function addCrystal(x,y,z){
-    const geo = new THREE.ConeGeometry(0.6, 1.6, 6);
-    const c = new THREE.Mesh(geo, matCrystal);
-    c.position.set(x, y + 1.2, z);
-    c.castShadow = true;
-    scene.add(c); crystals.push(c);
+    const geo=new THREE.ConeGeometry(0.5,1.5,6);
+    const mat=new THREE.MeshStandardMaterial({color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6});
+    const c=new THREE.Mesh(geo,mat);
+    c.position.set(x,y+1,z); scene.add(c); crystals.push(c);
   }
-  addCrystal(10, 3, 0);
-  addCrystal(26, 7, 0);
-  addCrystal(42, 11, 4);
-  addCrystal(50, 13, 0);
+  addCrystal(12,4,0); addCrystal(20,6,0);
 
-  // Player capsule approximated by a sphere for simple collisions
-  const player = {
-    pos: new THREE.Vector3(-4, 1.7, 0),
-    vel: new THREE.Vector3(0, 0, 0),
-    radius: 0.6,
-    grounded: false,
-    speed: 7.0,
-    jumpVel: 5.8
-  };
+  // Player
+  const player={pos:new THREE.Vector3(0,1.7,2),vel:new THREE.Vector3(),yaw:0,pitch:0,grounded:false};
+  camera.position.copy(player.pos);
 
-  // Visual player
-  const pMesh = new THREE.Mesh(new THREE.SphereGeometry(player.radius, 16, 16),
-    new THREE.MeshStandardMaterial({ color:0xbdf4ff, emissive:0x215a66, emissiveIntensity:0.3 }));
-  pMesh.castShadow = true; scene.add(pMesh);
+  // Input
+  const keys={w:false,a:false,s:false,d:false,space:false};
+  window.addEventListener("keydown",e=>{if(e.key==="w")keys.w=true;if(e.key==="a")keys.a=true;if(e.key==="s")keys.s=true;if(e.key==="d")keys.d=true;if(e.key===" ")keys.space=true;});
+  window.addEventListener("keyup",e=>{if(e.key==="w")keys.w=false;if(e.key==="a")keys.a=false;if(e.key==="s")keys.s=false;if(e.key==="d")keys.d=false;if(e.key===" ")keys.space=false;});
 
-  // HUD
-  let score = 0; const scoreEl = document.getElementById("score");
-
-  // Desktop input (fixed movement: X axis primary, Z optional small lane adjust)
-  const keys = { left:false, right:false, up:false, down:false, space:false };
-  window.addEventListener("keydown", e => {
-    const k = e.key.toLowerCase();
-    if(k === "arrowleft" || k === "a") keys.left = true;
-    if(k === "arrowright" || k === "d") keys.right = true;
-    if(k === "arrowup" || k === "w") keys.up = true;
-    if(k === "arrowdown" || k === "s") keys.down = true;
-    if(k === " ") keys.space = true;
-  });
-  window.addEventListener("keyup", e => {
-    const k = e.key.toLowerCase();
-    if(k === "arrowleft" || k === "a") keys.left = false;
-    if(k === "arrowright" || k === "d") keys.right = false;
-    if(k === "arrowup" || k === "w") keys.up = false;
-    if(k === "arrowdown" || k === "s") keys.down = false;
-    if(k === " ") keys.space = false;
-  });
-
-  // Touch joystick (left)
-  let moveStick = { x:0, y:0 };
-  function setupStick(el, onMove){
-    const knob = el.querySelector(".knob");
-    let active = false;
-    el.addEventListener("touchstart", () => { active = true; }, {passive:false});
-    el.addEventListener("touchmove", e => {
-      if(!active) return;
-      const rect = el.getBoundingClientRect();
-      const t = e.touches[0];
-      const dx = t.clientX - (rect.left + rect.width/2);
-      const dy = t.clientY - (rect.top + rect.height/2);
-      const r = 50, mag = Math.hypot(dx, dy), cl = mag > r ? r/mag : 1;
-      const nx = dx * cl, ny = dy * cl;
-      knob.style.transform = `translate(${nx}px, ${ny}px) translate(-50%,-50%)`;
-      onMove(nx/r, ny/r);
-      e.preventDefault();
-    }, {passive:false});
-    el.addEventListener("touchend", () => { active = false; knob.style.transform = "translate(-50%,-50%)"; onMove(0,0); });
-    el.addEventListener("touchcancel", () => { active = false; knob.style.transform = "translate(-50%,-50%)"; onMove(0,0); });
-  }
-  setupStick(document.getElementById("stickLeft"), (x,y) => { moveStick.x = x; moveStick.y = y; });
-
-  // Jump button
-  const btnJump = document.getElementById("btnJump");
-  btnJump.addEventListener("touchstart", e => { e.preventDefault(); attemptJump(); }, {passive:false});
-  btnJump.addEventListener("click", attemptJump);
-  function attemptJump(){
-    if(player.grounded){
-      player.vel.y = player.jumpVel;
-      player.grounded = false;
+  // Pointer look
+  renderer.domElement.addEventListener("click",()=>{renderer.domElement.requestPointerLock();});
+  document.addEventListener("mousemove",e=>{
+    if(document.pointerLockElement){
+      player.yaw-=e.movementX*0.0025;
+      player.pitch-=e.movementY*0.002;
+      player.pitch=Math.max(-Math.PI/2+0.1,Math.min(Math.PI/2-0.1,player.pitch));
     }
-  }
-
-  // Reset button
-  document.getElementById("btnReset").addEventListener("click", () => {
-    score = 0; scoreEl.textContent = score;
-    player.pos.set(-4, 1.7, 0);
-    player.vel.set(0, 0, 0);
   });
 
-  // AABB helper
-  function getAABB(mesh){
-    mesh.geometry.computeBoundingBox();
-    const bb = mesh.geometry.boundingBox.clone();
-    bb.min.add(mesh.position); bb.max.add(mesh.position);
-    return bb;
+  // Touch sticks
+  let moveStick={x:0,y:0}, lookStick={x:0,y:0};
+  function setupStick(el,onMove){
+    const knob=el.querySelector(".knob"); let active=false;
+    el.addEventListener("touchstart",()=>{active=true;},{passive:false});
+    el.addEventListener("touchmove",e=>{
+      if(!active)return;
+      const rect=el.getBoundingClientRect(); const t=e.touches[0];
+      const dx=t.clientX-(rect.left+rect.width/2); const dy=t.clientY-(rect.top+rect.height/2);
+      const r=50,mag=Math.hypot(dx,dy),cl=mag>r?r/mag:1;
+      const nx=dx*cl,ny=dy*cl;
+      knob.style.transform=`translate(${nx}px,${ny}px) translate(-50%,-50%)`;
+      onMove(nx/r,ny/r); e.preventDefault();
+    },{passive:false});
+    el.addEventListener("touchend",()=>{active=false;knob.style.transform="translate(-50%,-50%)";onMove(0,0);});
   }
+  setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
+  setupStick(document.getElementById("stickRight"),(x,y)=>{lookStick.x=x;lookStick.y=y;});
 
-  // Collision resolution: sphere vs AABBs (platforms + ground)
-  function resolveCollisions(pos, vel, radius){
-    let grounded = false;
-    const objs = platforms.concat([ground]);
-    for(const m of objs){
-      const bb = getAABB(m);
-      // Inflate box by sphere radius to treat sphere as point
-      const minX = bb.min.x - radius, maxX = bb.max.x + radius;
-      const minY = bb.min.y - radius, maxY = bb.max.y + radius;
-      const minZ = bb.min.z - radius, maxZ = bb.max.z + radius;
+  // Jump
+  document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=5;player.grounded=false;}});
 
-      if(pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY && pos.z >= minZ && pos.z <= maxZ){
-        // Compute penetration depths along each axis
-        const penX = Math.min(maxX - pos.x, pos.x - minX);
-        const penY = Math.min(maxY - pos.y, pos.y - minY);
-        const penZ = Math.min(maxZ - pos.z, pos.z - minZ);
-        const minPen = Math.min(penX, penY, penZ);
-
-        if(minPen === penY){
-          // Resolve vertically
-          if(pos.y > (bb.max.y + bb.min.y)/2){
-            pos.y = maxY; // push up
-            vel.y = Math.max(0, vel.y);
-            grounded = true;
-          } else {
-            pos.y = minY; // push down
-            vel.y = Math.min(0, vel.y);
-          }
-        } else if(minPen === penX){
-          // Resolve along X (prevents clipping sides)
-          if(pos.x > (bb.max.x + bb.min.x)/2){
-            pos.x = maxX;
-          } else {
-            pos.x = minX;
-          }
-          vel.x = 0;
-        } else {
-          // Resolve along Z
-          if(pos.z > (bb.max.z + bb.min.z)/2){
-            pos.z = maxZ;
-          } else {
-            pos.z = minZ;
-          }
-          vel.z = 0;
-        }
-      }
-    }
-    return grounded;
-  }
-
-  // Movement: fixed lane along X; Z softly clamped to lane center (0)
-  function getDesiredVelocity(){
-    const laneCenterZ = 0;
-    const laneClampStrength = 6; // pulls toward lane center
-
-    // Desktop keys and mobile stick combined
-    let xMove = (keys.right ? 1 : 0) - (keys.left ? 1 : 0) + moveStick.x;
-    let zMove = (keys.up ? -0.5 : 0) + (keys.down ? 0.5 : 0) - moveStick.y * 0.5; // small influence
-    // Normalize to avoid diagonal speed boost
-    const len = Math.hypot(xMove, zMove);
-    if(len > 1){ xMove /= len; zMove /= len; }
-
-    const vx = xMove * player.speed;
-    const vz = zMove * player.speed + (laneCenterZ - player.pos.z) * laneClampStrength * 0.02; // gentle clamp
-    return { vx, vz };
-  }
-
-  // Resize
-  window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  // Score
+  let score=0; const scoreEl=document.getElementById("score");
 
   // Loop
-  function loop(now){
-    const dt = Math.min(0.033, (now - (loop.last || now)) / 1000);
-    loop.last = now;
+  function loop(){
+    const dt=0.016;
+    const speed=6;
+    // Flip forward/back: pushing joystick up moves backward, down moves forward
+    let forward=(keys.w?1:0)-(keys.s?1:0) - moveStick.y; 
+    let strafe=(keys.d?1:0)-(keys.a?1:0)+moveStick.x;
+    const len=Math.hypot(forward,strafe); if(len>1){forward/=len;strafe/=len;}
+    const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
+    player.pos.x+=(strafe*cos+forward*sin)*speed*dt;
+    player.pos.z+=(strafe*-sin+forward*cos)*speed*dt;
 
-    // Desired horizontal velocity
-    const { vx, vz } = getDesiredVelocity();
-    player.vel.x = vx;
-    player.vel.z = vz;
+    // Gravity
+    player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt;
+    if(player.pos.y<1.7){player.pos.y=1.7;player.vel.y=0;player.grounded=true;}
 
-    // Integrate motion
-    player.pos.x += player.vel.x * dt;
-    player.pos.z += player.vel.z * dt;
-    player.vel.y -= 9.8 * dt; // gravity
-    player.pos.y += player.vel.y * dt;
+    // Look (touch)
+    player.yaw-=lookStick.x*2.5*dt;
+    player.pitch-=lookStick.y*2.0*dt;
+    player.pitch=Math.max(-Math.PI/2+0.1,Math.min(Math.PI/2-0.1,player.pitch));
 
-    // Collisions
-    player.grounded = resolveCollisions(player.pos, player.vel, player.radius);
-
-    // Fall reset
-    if(player.pos.y < -10){
-      player.pos.set(-4, 1.7, 0);
-      player.vel.set(0, 0, 0);
-    }
-
-    // Player mesh
-    pMesh.position.copy(player.pos);
+    // Camera
+    camera.position.copy(player.pos);
+    camera.rotation.set(player.pitch,player.yaw,0);
 
     // Collect crystals
     for(let i=crystals.length-1;i>=0;i--){
-      const c = crystals[i];
-      if(pMesh.position.distanceTo(c.position) < 1.2){
-        scene.remove(c); crystals.splice(i,1);
-        score++; scoreEl.textContent = score;
+      if(camera.position.distanceTo(crystals[i].position)<1.5){
+        scene.remove(crystals[i]); crystals.splice(i,1); score++; scoreEl.textContent=score;
       }
     }
 
-    // Fixed camera follows player from offset but does not rotate
-    const targetCamPos = player.pos.clone().add(camOffset);
-    camera.position.lerp(targetCamPos, 0.12);
-    camera.lookAt(player.pos.x, player.pos.y + 1.0, player.pos.z);
-
-    renderer.render(scene, camera);
+    renderer.render(scene,camera);
     requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop);
+  loop();
 })();
-</script>
-</body>
-</html>
+</script
