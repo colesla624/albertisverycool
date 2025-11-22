@@ -5,27 +5,24 @@
   <title>Second-Person 3D Platformer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <style>
-    html, body { margin:0; padding:0; height:100%; background:#111; overflow:hidden; font-family: system-ui, sans-serif; }
-    #game { position:fixed; inset:0; }
-    /* UI */
-    .hud {
-      position: fixed; inset: 0; pointer-events: none;
-    }
-    .btn, .stick-area { pointer-events: auto; touch-action: none; }
+    html, body { margin:0; padding:0; height:100%; background:#111; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #game { position:fixed; inset:0; display:block; }
+
+    /* HUD */
+    .hud { position: fixed; inset: 0; pointer-events: none; }
     .title {
       position: fixed; left: 50%; transform: translateX(-50%);
-      top: 8px; color: #fff; font-weight: 600; letter-spacing: 0.5px;
+      top: 8px; color: #fff; font-weight: 600; letter-spacing: 0.5px; font-size: 14px;
     }
-    .level-label {
-      position: fixed; right: 12px; top: 8px; color: #fff; opacity: 0.8; font-size: 12px;
-    }
+    .level-label { position: fixed; right: 12px; top: 8px; color: #fff; opacity: 0.8; font-size: 12px; }
+
+    .btn, .stick-area { pointer-events: auto; touch-action: none; user-select: none; }
     .btn {
       position: fixed; right: 12px; bottom: 16px;
       width: 96px; height: 96px; border-radius: 50%;
       background: radial-gradient(#fff, #ddd);
       box-shadow: 0 4px 12px rgba(0,0,0,0.4);
       display: grid; place-items: center; font-weight: 700; color:#222;
-      user-select: none;
     }
     .stick-area {
       position: fixed; bottom: 16px; width: 160px; height: 160px;
@@ -33,7 +30,7 @@
       border: 1px solid rgba(255,255,255,0.1);
     }
     #moveStick { left: 12px; }
-    #lookStick { right: 124px; } /* Leaves room for Jump button */
+    #lookStick { right: 124px; } /* leaves room for jump button */
     .stick-knob {
       position: absolute; left: 50%; top: 50%;
       width: 64px; height: 64px; border-radius: 50%;
@@ -41,30 +38,17 @@
       background: radial-gradient(#7fd, #3aa);
       box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
-    .tooltip {
-      position: fixed; left: 50%; transform: translateX(-50%);
-      bottom: 8px; color:#fff; opacity:0.7; font-size:12px;
-    }
+    .tooltip { position: fixed; left: 50%; transform: translateX(-50%); bottom: 8px; color:#fff; opacity:0.7; font-size:12px; }
+
     /* Pause overlay */
-    .overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-      display: none; align-items: center; justify-content: center; color: #fff;
-    }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; color: #fff; }
     .overlay.show { display: flex; }
-    .panel {
-      background: #1b1b1b; padding: 16px; border-radius: 8px; width: 80%; max-width: 420px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    }
+    .panel { background: #1b1b1b; padding: 16px; border-radius: 8px; width: 80%; max-width: 420px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
     .panel h2 { margin: 0 0 8px 0; }
     .panel p { margin: 0 0 12px 0; opacity: 0.85; }
     .panel .row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .panel button {
-      flex: 1; padding: 10px 12px; border-radius: 6px; border: none; font-weight: 600;
-      background: #2a7; color: #041; cursor: pointer;
-    }
+    .panel button { flex: 1; padding: 10px 12px; border-radius: 6px; border: none; font-weight: 600; background: #2a7; color: #041; cursor: pointer; }
     .panel button.secondary { background: #888; color: #222; }
-    /* Prevent text selection */
-    * { -webkit-user-select: none; user-select: none; }
   </style>
 </head>
 <body>
@@ -74,12 +58,8 @@
     <div class="title">Second-Person 3D Platformer</div>
     <div class="level-label" id="levelLabel">Level 1</div>
 
-    <div id="moveStick" class="stick-area">
-      <div class="stick-knob" id="moveKnob"></div>
-    </div>
-    <div id="lookStick" class="stick-area">
-      <div class="stick-knob" id="lookKnob"></div>
-    </div>
+    <div id="moveStick" class="stick-area"><div class="stick-knob" id="moveKnob"></div></div>
+    <div id="lookStick" class="stick-area"><div class="stick-knob" id="lookKnob"></div></div>
 
     <div id="jumpBtn" class="btn">JUMP</div>
 
@@ -88,8 +68,8 @@
 
   <div class="overlay" id="overlay">
     <div class="panel">
-      <h2>Paused</h2>
-      <p>Second-person camera watches you from an NPC’s perspective. Clear platforms to reach the goal.</p>
+      <h2>Level complete</h2>
+      <p>Camera watches you from an NPC’s perspective. Clear platforms to reach the green goal.</p>
       <div class="row">
         <button id="resumeBtn">Resume</button>
         <button id="restartBtn" class="secondary">Restart Level</button>
@@ -102,7 +82,7 @@
   <script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
 
   <script>
-    // ====== Core setup ======
+    // ====== Renderer, scene, camera ======
     const canvas = document.getElementById('game');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -111,10 +91,11 @@
 
     const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 500);
     camera.position.set(0, 6, 10);
+    camera.lookAt(0, 0, 0); // ensure not black screen
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.9);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 1.1);
     scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
     dir.position.set(6, 10, 4);
     scene.add(dir);
 
@@ -134,25 +115,17 @@
     const matPlayer = new THREE.MeshStandardMaterial({ color: 0x77ccff, metalness: 0.0, roughness: 0.65 });
     const matNpc = new THREE.MeshStandardMaterial({ color: 0xffcc66, roughness: 0.6 });
 
-    // ====== Level data ======
-    // Each level: platforms array of {pos:[x,y,z], size:[w,h,d], type:'platform'|'hazard'|'goal'}
+    // ====== Levels ======
     const levels = [
-      {
-        name: "Level 1",
-        start: [0, 1, 0],
-        npcHome: [-8, 4, -8],
+      { name: "Level 1", start: [0, 1, 0], npcHome: [-8, 4, -8],
         platforms: [
           { pos:[0,0,0], size:[8,1,8], type:'platform' },
           { pos:[8,1,0], size:[4,1,4], type:'platform' },
           { pos:[12,2,2], size:[3,1,3], type:'platform' },
           { pos:[16,3,4], size:[3,1,3], type:'platform' },
           { pos:[20,3,6], size:[4,1,4], type:'goal' }
-        ]
-      },
-      {
-        name: "Level 2 - Rising Towers",
-        start: [0, 1, 0],
-        npcHome: [ -10, 6, -12 ],
+        ] },
+      { name: "Level 2 - Rising Towers", start: [0, 1, 0], npcHome: [-10, 6, -12],
         platforms: [
           { pos:[0,0,0], size:[10,1,10], type:'platform' },
           { pos:[6,2,2], size:[3,1,3], type:'platform' },
@@ -160,36 +133,24 @@
           { pos:[12,6,6], size:[3,1,3], type:'platform' },
           { pos:[12,0,8], size:[6,1,4], type:'hazard' },
           { pos:[16,6,8], size:[4,1,4], type:'goal' }
-        ]
-      },
-      {
-        name: "Level 3 - Sky Bridges",
-        start: [-4, 1, -6],
-        npcHome: [ -14, 8, -14 ],
+        ] },
+      { name: "Level 3 - Sky Bridges", start: [-4, 1, -6], npcHome: [-14, 8, -14],
         platforms: [
           { pos:[-4,0,-6], size:[8,1,8], type:'platform' },
-          { pos:[2,2,-2], size:[8,1,2], type:'platform' }, // narrow bridge
-          { pos:[10,3,0], size:[6,1,2], type:'platform' }, // narrower
-          { pos:[14,4,2], size:[4,1,2], type:'platform' }, // narrowest
+          { pos:[2,2,-2], size:[8,1,2], type:'platform' },
+          { pos:[10,3,0], size:[6,1,2], type:'platform' },
+          { pos:[14,4,2], size:[4,1,2], type:'platform' },
           { pos:[18,5,4], size:[4,1,4], type:'goal' }
-        ]
-      },
-      {
-        name: "Level 4 - Lava Caverns",
-        start: [0, 1, 0],
-        npcHome: [ -12, 5, -10 ],
+        ] },
+      { name: "Level 4 - Lava Caverns", start: [0, 1, 0], npcHome: [-12, 5, -10],
         platforms: [
           { pos:[0,0,0], size:[9,1,9], type:'platform' },
           { pos:[5,1,0], size:[3,1,3], type:'platform' },
-          { pos:[9,0,2], size:[5,1,4], type:'hazard' }, // lava
+          { pos:[9,0,2], size:[5,1,4], type:'hazard' },
           { pos:[12,2,4], size:[3,1,3], type:'platform' },
           { pos:[16,3,6], size:[4,1,4], type:'goal' }
-        ]
-      },
-      {
-        name: "Level 5 - Final Fortress",
-        start: [-6, 1, 0],
-        npcHome: [ -16, 6, -16 ],
+        ] },
+      { name: "Level 5 - Final Fortress", start: [-6, 1, 0], npcHome: [-16, 6, -16],
         platforms: [
           { pos:[-6,0,0], size:[10,1,10], type:'platform' },
           { pos:[0,2,2], size:[3,1,3], type:'platform' },
@@ -197,30 +158,34 @@
           { pos:[8,4,6], size:[6,1,2], type:'platform' },
           { pos:[10,2,8], size:[6,1,4], type:'hazard' },
           { pos:[14,5,10], size:[4,1,4], type:'goal' }
-        ]
-      }
+        ] }
     ];
     let currentLevelIndex = 0;
 
-    // ====== World objects ======
+    // ====== World ======
     const world = new THREE.Group();
     scene.add(world);
 
-    // Player
     const playerGeo = new THREE.SphereGeometry(0.6, 24, 16);
     const player = new THREE.Mesh(playerGeo, matPlayer);
     player.position.set(0, 1, 0);
-    player.castShadow = true;
     world.add(player);
 
-    // NPC (camera anchor for second-person)
     const npcGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
     const npc = new THREE.Mesh(npcGeo, matNpc);
     npc.position.set(-8, 4, -8);
     world.add(npc);
 
-    // Physics
-    const gravity = -20; // units/sec^2
+    // Ground visual
+    const floorGeo = new THREE.PlaneGeometry(200, 200);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0d0d12, roughness: 1, metalness: 0 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI/2;
+    floor.position.y = -0.5;
+    scene.add(floor);
+
+    // ====== Physics and movement ======
+    const gravity = -20;
     const moveSpeed = 8;
     const airControl = 0.5;
     const jumpSpeed = 9.5;
@@ -229,9 +194,8 @@
     let vel = new THREE.Vector3(0, 0, 0);
     let onGround = false;
 
-    // Platforms storage
     const platforms = [];
-    const bounds = []; // AABB: {min:THREE.Vector3, max:THREE.Vector3, type, mesh}
+    const bounds = []; // AABB list
 
     function clearLevel() {
       for (const p of platforms) world.remove(p);
@@ -244,8 +208,6 @@
       const mat = type === 'goal' ? matGoal : (type === 'hazard' ? matHazard : matPlatform);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(pos[0], pos[1], pos[2]);
-      mesh.receiveShadow = true;
-      mesh.castShadow = false;
       world.add(mesh);
       platforms.push(mesh);
       const half = new THREE.Vector3(size[0]/2, size[1]/2, size[2]/2);
@@ -264,6 +226,7 @@
 
       player.position.set(level.start[0], level.start[1], level.start[2]);
       vel.set(0, 0, 0);
+      onGround = false;
 
       npc.position.set(level.npcHome[0], level.npcHome[1], level.npcHome[2]);
     }
@@ -271,10 +234,8 @@
     loadLevel(0);
 
     // ====== Second-person camera ======
-    // Camera sits at NPC, looks at player; slight shoulder offset and smoothing.
     const camOffset = new THREE.Vector3(0.6, 0.8, 0.0);
     function updateCamera(dt) {
-      // NPC lightly lerps toward its "home" but also rotates to keep player centered
       const level = levels[currentLevelIndex];
       const home = new THREE.Vector3(level.npcHome[0], level.npcHome[1], level.npcHome[2]);
       npc.position.lerp(home, Math.min(1, dt * 2));
@@ -285,7 +246,7 @@
       camera.lookAt(player.position);
     }
 
-    // ====== Controls: joysticks and jump ======
+    // ====== Controls ======
     const moveStick = document.getElementById('moveStick');
     const lookStick = document.getElementById('lookStick');
     const moveKnob = document.getElementById('moveKnob');
@@ -294,8 +255,8 @@
 
     let moveVec = { x:0, y:0 };
     let lookVec = { x:0, y:0 };
-    let yaw = 0; // player facing
-    let pitch = 0.2; // slight upward in case needed
+    let yaw = 0;
+    let pitch = 0.2;
 
     function setupStick(area, knob, vec) {
       let active = false, startX=0, startY=0;
@@ -304,7 +265,6 @@
         active = true;
         const t = e.touches ? e.touches[0] : e;
         startX = t.clientX; startY = t.clientY;
-        knob.style.transform = `translate(-50%, -50%)`;
         area.style.background = 'rgba(255,255,255,0.12)';
       }
       function onMove(e) {
@@ -344,34 +304,26 @@
     jumpBtn.addEventListener('mousedown', () => tryJump());
 
     function tryJump() {
-      if (onGround) {
-        vel.y = jumpSpeed;
-        onGround = false;
-      }
+      if (onGround) { vel.y = jumpSpeed; onGround = false; }
     }
 
-    // ====== Movement and physics ======
-    const tmp = new THREE.Vector3();
     function applyInput(dt) {
-      // Look stick rotates player yaw relative to NPC view
-      yaw += lookVec.x * dt * 2.5; // horizontal rotate
-      pitch = Math.max(-1.0, Math.min(1.0, pitch - lookVec.y * dt * 2.0)); // not used for camera, but could affect aiming
+      // Look stick rotates player yaw
+      yaw += lookVec.x * dt * 2.5;
+      pitch = Math.max(-1.0, Math.min(1.0, pitch - lookVec.y * dt * 2.0));
 
-      // Move stick: local to yaw
       const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
       const right   = new THREE.Vector3(forward.z, 0, -forward.x);
 
       const desired = new THREE.Vector3()
-        .addScaledVector(forward, -moveVec.y)  // up on stick moves forward relative to facing
+        .addScaledVector(forward, -moveVec.y)
         .addScaledVector(right,   moveVec.x);
 
       const speed = onGround ? moveSpeed : moveSpeed * airControl;
       vel.x = vel.x * damping + desired.x * speed * (1 - damping);
       vel.z = vel.z * damping + desired.z * speed * (1 - damping);
 
-      // Face movement direction if significant input
       if (Math.hypot(desired.x, desired.z) > 0.1) {
-        // keep yaw as our facing; player mesh rotates for visual
         player.rotation.y = yaw;
       }
     }
@@ -379,28 +331,24 @@
     function integrate(dt) {
       vel.y += gravity * dt;
 
-      // Predict position
       const nextPos = new THREE.Vector3().copy(player.position);
       nextPos.x += vel.x * dt;
       nextPos.y += vel.y * dt;
       nextPos.z += vel.z * dt;
 
-      // Simple sphere-AABB collision (resolve axis by axis)
       const radius = 0.6;
-
-      // Check hazards/goals/platforms with AABB
       onGround = false;
-      // Resolve X
+
+      // X axis
       let testPos = new THREE.Vector3(nextPos.x, player.position.y, player.position.z);
       for (const b of bounds) {
         if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
-          // Push out along X
           if (player.position.x <= b.min.x) testPos.x = b.min.x - radius;
           else if (player.position.x >= b.max.x) testPos.x = b.max.x + radius;
           vel.x = 0;
         }
       }
-      // Resolve Z
+      // Z axis
       testPos.set(testPos.x, player.position.y, nextPos.z);
       for (const b of bounds) {
         if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
@@ -409,30 +357,19 @@
           vel.z = 0;
         }
       }
-      // Resolve Y (grounding)
+      // Y axis (grounding)
       testPos.set(testPos.x, nextPos.y, testPos.z);
       for (const b of bounds) {
         if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
-          // Determine from above or below
           if (player.position.y >= b.max.y) {
-            testPos.y = b.max.y + radius; // land on top
+            testPos.y = b.max.y + radius;
             vel.y = 0;
             onGround = true;
+            if (b.type === 'hazard') respawn();
+            if (b.type === 'goal') showOverlay();
           } else if (player.position.y <= b.min.y) {
-            testPos.y = b.min.y - radius; // hit from below
+            testPos.y = b.min.y - radius;
             vel.y = 0;
-          }
-          // Hazard or Goal check only when contacting top surface
-          if (b.type === 'hazard' && onGround) {
-            // reset to start
-            const level = levels[currentLevelIndex];
-            player.position.set(level.start[0], level.start[1], level.start[2]);
-            vel.set(0, 0, 0);
-            onGround = false;
-            return; // skip remainder this frame
-          }
-          if (b.type === 'goal' && onGround) {
-            showOverlay(); // allow next level
           }
         }
       }
@@ -441,7 +378,6 @@
     }
 
     function sphereAabbIntersect(center, r, min, max) {
-      // clamp center to box
       const cx = Math.max(min.x, Math.min(center.x, max.x));
       const cy = Math.max(min.y, Math.min(center.y, max.y));
       const cz = Math.max(min.z, Math.min(center.z, max.z));
@@ -449,11 +385,19 @@
       return (dx*dx + dy*dy + dz*dz) <= r*r;
     }
 
+    function respawn() {
+      const level = levels[currentLevelIndex];
+      player.position.set(level.start[0], level.start[1], level.start[2]);
+      vel.set(0, 0, 0);
+      onGround = false;
+    }
+
     // ====== Overlay / level control ======
     const overlay = document.getElementById('overlay');
     const resumeBtn = document.getElementById('resumeBtn');
     const restartBtn = document.getElementById('restartBtn');
     const nextBtn = document.getElementById('nextBtn');
+    let paused = false;
 
     function showOverlay() { overlay.classList.add('show'); paused = true; }
     function hideOverlay() { overlay.classList.remove('show'); paused = false; }
@@ -462,23 +406,13 @@
     restartBtn.addEventListener('click', () => { loadLevel(currentLevelIndex); hideOverlay(); });
     nextBtn.addEventListener('click', () => { loadLevel(currentLevelIndex + 1); hideOverlay(); });
 
-    let paused = false;
-
-    // ====== Ground plane (visual) ======
-    const floorGeo = new THREE.PlaneGeometry(200, 200);
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0d0d12, roughness: 1, metalness: 0 });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI/2;
-    floor.position.y = -0.5;
-    scene.add(floor);
-
     // ====== Main loop ======
     let last = performance.now();
     function loop(now) {
       requestAnimationFrame(loop);
       const dt = Math.min(0.033, (now - last) / 1000);
       last = now;
-      if (paused) return;
+      if (paused) { renderer.render(scene, camera); return; }
 
       applyInput(dt);
       integrate(dt);
@@ -488,18 +422,10 @@
     }
     requestAnimationFrame(loop);
 
-    // ====== Optional: keyboard (desktop testing) ======
-    const keys = {};
-    window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'Space') tryJump(); });
-    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-    function keyboardFallback(dt) {
-      // (Not wired into applyInput to keep mobile primary)
-      // Left/Right arrows tweak yaw, WSAD adjust moveVec
-    }
-
-    // ====== Prevent page scroll on touch ======
-    document.addEventListener('touchmove', (e) => { if (e.target.classList.contains('stick-area')) e.preventDefault(); }, { passive: false });
+    // Prevent page scroll on touch
+    document.addEventListener('touchmove', (e) => {
+      if (e.target.classList.contains('stick-area')) e.preventDefault();
+    }, { passive: false });
   </script>
 </body>
 </html>
