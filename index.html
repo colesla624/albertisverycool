@@ -1,180 +1,505 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Lucid Platformer 3rd Person</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <meta charset="utf-8" />
+  <title>Second-Person 3D Platformer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #0e0f1a; }
-    canvas { display: block; }
-    #hud {
-      position: absolute; top: 10px; left: 10px;
-      color: #e7e7ff; font-family: system-ui, sans-serif; font-size: 16px;
-      text-shadow: 0 0 6px rgba(170,170,255,0.7);
+    html, body { margin:0; padding:0; height:100%; background:#111; overflow:hidden; font-family: system-ui, sans-serif; }
+    #game { position:fixed; inset:0; }
+    /* UI */
+    .hud {
+      position: fixed; inset: 0; pointer-events: none;
     }
-    #controls {
-      position: absolute; bottom: 20px; left: 20px; right: 20px;
-      display: flex; justify-content: space-between; align-items: center;
-      pointer-events: auto;
+    .btn, .stick-area { pointer-events: auto; touch-action: none; }
+    .title {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      top: 8px; color: #fff; font-weight: 600; letter-spacing: 0.5px;
     }
-    .pad {
-      width: 120px; height: 120px; border-radius: 60px;
-      background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.25), rgba(255,255,255,0.08));
-      position: relative; touch-action: none;
-    }
-    .stick {
-      position: absolute; width: 60px; height: 60px; border-radius: 30px;
-      background: rgba(255,255,255,0.5); top: 30px; left: 30px;
-      transform: translate(0,0);
+    .level-label {
+      position: fixed; right: 12px; top: 8px; color: #fff; opacity: 0.8; font-size: 12px;
     }
     .btn {
-      width: 120px; height: 120px; border-radius: 60px;
-      background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.25), rgba(255,255,255,0.08));
-      color: #fff; font-size: 20px; display: grid; place-items: center; user-select: none;
+      position: fixed; right: 12px; bottom: 16px;
+      width: 96px; height: 96px; border-radius: 50%;
+      background: radial-gradient(#fff, #ddd);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      display: grid; place-items: center; font-weight: 700; color:#222;
+      user-select: none;
     }
+    .stick-area {
+      position: fixed; bottom: 16px; width: 160px; height: 160px;
+      border-radius: 50%; background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #moveStick { left: 12px; }
+    #lookStick { right: 124px; } /* Leaves room for Jump button */
+    .stick-knob {
+      position: absolute; left: 50%; top: 50%;
+      width: 64px; height: 64px; border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(#7fd, #3aa);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    }
+    .tooltip {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 8px; color:#fff; opacity:0.7; font-size:12px;
+    }
+    /* Pause overlay */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: none; align-items: center; justify-content: center; color: #fff;
+    }
+    .overlay.show { display: flex; }
+    .panel {
+      background: #1b1b1b; padding: 16px; border-radius: 8px; width: 80%; max-width: 420px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .panel h2 { margin: 0 0 8px 0; }
+    .panel p { margin: 0 0 12px 0; opacity: 0.85; }
+    .panel .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .panel button {
+      flex: 1; padding: 10px 12px; border-radius: 6px; border: none; font-weight: 600;
+      background: #2a7; color: #041; cursor: pointer;
+    }
+    .panel button.secondary { background: #888; color: #222; }
+    /* Prevent text selection */
+    * { -webkit-user-select: none; user-select: none; }
   </style>
 </head>
 <body>
-  <div id="hud">Time: 0.0s · Orbs: 0/5</div>
-  <div id="controls">
-    <div class="pad" id="movePad"><div class="stick" id="moveStick"></div></div>
-    <div class="btn" id="jumpBtn">Jump</div>
+  <canvas id="game"></canvas>
+
+  <div class="hud">
+    <div class="title">Second-Person 3D Platformer</div>
+    <div class="level-label" id="levelLabel">Level 1</div>
+
+    <div id="moveStick" class="stick-area">
+      <div class="stick-knob" id="moveKnob"></div>
+    </div>
+    <div id="lookStick" class="stick-area">
+      <div class="stick-knob" id="lookKnob"></div>
+    </div>
+
+    <div id="jumpBtn" class="btn">JUMP</div>
+
+    <div class="tooltip">Left joystick: move • Right joystick: look • Button: jump</div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+  <div class="overlay" id="overlay">
+    <div class="panel">
+      <h2>Paused</h2>
+      <p>Second-person camera watches you from an NPC’s perspective. Clear platforms to reach the goal.</p>
+      <div class="row">
+        <button id="resumeBtn">Resume</button>
+        <button id="restartBtn" class="secondary">Restart Level</button>
+        <button id="nextBtn">Next Level</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
 
   <script>
-    // Scene
+    // ====== Core setup ======
+    const canvas = document.getElementById('game');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x10122a, 0.035);
-    scene.background = new THREE.Color(0x10122a);
+    scene.background = new THREE.Color(0x101014);
 
-    // Camera (third-person follow)
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1000);
+    const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 500);
+    camera.position.set(0, 6, 10);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    // Lighting
-    const hemi = new THREE.HemisphereLight(0x99aaff, 0x404070, 0.8);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.9);
     scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xb0b8ff, 0.8);
-    dir.position.set(10, 20, -10);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(6, 10, 4);
     scene.add(dir);
 
-    // Materials
-    const platformMat = new THREE.MeshStandardMaterial({ color: 0x6b6fde });
-    const orbMat = new THREE.MeshStandardMaterial({ color: 0x9cf0ff, emissive: 0x78d4ff, emissiveIntensity: 0.8 });
-
-    // Platforms
-    const platforms = [];
-    function addPlatform(x,y,z,w=6,h=0.6,d=6){
-      const geo = new THREE.BoxGeometry(w,h,d);
-      const mesh = new THREE.Mesh(geo, platformMat);
-      mesh.position.set(x,y,z);
-      scene.add(mesh);
-      platforms.push({mesh,w,h,d});
-      return mesh;
+    function resize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
     }
-    addPlatform(0,0,0,10,0.6,10);
-    addPlatform(12,2,-6,6,0.6,6);
-    addPlatform(24,4,-12,6,0.6,6);
-    addPlatform(36,6,-6,9,0.6,6);
-    addPlatform(48,8,0,12,0.6,8);
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
 
-    // Orbs
-    const orbs=[];
-    function addOrb(x,y,z){
-      const g=new THREE.SphereGeometry(0.35,24,24);
-      const orb=new THREE.Mesh(g,orbMat);
-      orb.position.set(x,y,z);
-      scene.add(orb);
-      orbs.push(orb);
-    }
-    addOrb(0,2,0);
-    addOrb(24,6,-12);
+    // ====== Materials ======
+    const matPlatform = new THREE.MeshStandardMaterial({ color: 0x3a3a48, metalness: 0.1, roughness: 0.8 });
+    const matGoal = new THREE.MeshStandardMaterial({ color: 0x33cc77, emissive: 0x114422, emissiveIntensity: 0.6 });
+    const matHazard = new THREE.MeshStandardMaterial({ color: 0xcc3344, emissive: 0x440000, emissiveIntensity: 0.4 });
+    const matPlayer = new THREE.MeshStandardMaterial({ color: 0x77ccff, metalness: 0.0, roughness: 0.65 });
+    const matNpc = new THREE.MeshStandardMaterial({ color: 0xffcc66, roughness: 0.6 });
 
-    // Player avatar (simple capsule)
-    const playerGeo = new THREE.CapsuleGeometry(0.5,1.2,8,16);
-    const playerMat = new THREE.MeshStandardMaterial({color:0x00ff99});
-    const playerMesh = new THREE.Mesh(playerGeo,playerMat);
-    scene.add(playerMesh);
-
-    const player = {
-      pos:new THREE.Vector3(0,2,0),
-      vel:new THREE.Vector3(0,0,0),
-      yaw:0,
-      radius:0.5,
-      onGround:false
-    };
-
-    // Spawn on first platform
-    const startPlat=platforms[0];
-    const startTopY=startPlat.mesh.position.y+startPlat.h/2;
-    player.pos.set(startPlat.mesh.position.x,startTopY+player.radius,startPlat.mesh.position.z);
-
-    // Input
-    const keys={};
-    document.addEventListener('keydown',e=>keys[e.code]=true);
-    document.addEventListener('keyup',e=>keys[e.code]=false);
-
-    // Touch controls
-    const movePad=document.getElementById('movePad');
-    const moveStick=document.getElementById('moveStick');
-    const jumpBtn=document.getElementById('jumpBtn');
-    let moveVec={x:0,y:0};
-    function setStick(dx,dy){moveStick.style.transform=`translate(${dx}px,${dy}px)`;}
-    function clamp(n,max){return Math.max(-max,Math.min(max,n));}
-    movePad.addEventListener('touchstart',e=>{
-      const rect=movePad.getBoundingClientRect();
-      moveBase={x:rect.left+rect.width/2,y:rect.top+rect.height/2};
-    });
-    movePad.addEventListener('touchmove',e=>{
-      e.preventDefault();
-      const t=e.changedTouches[0];
-      const dx=clamp(t.clientX-moveBase.x,40);
-      const dy=clamp(t.clientY-moveBase.y,40);
-      setStick(dx,dy);
-      moveVec.x=dx/40; moveVec.y=dy/40;
-    },{passive:false});
-    movePad.addEventListener('touchend',()=>{moveVec.x=0;moveVec.y=0;setStick(0,0);});
-    jumpBtn.addEventListener('touchstart',()=>tryJump());
-
-    function getMoveInput(){
-      let mx=0,mz=0;
-      if(keys['KeyW'])mz-=1;
-      if(keys['KeyS'])mz+=1;
-      if(keys['KeyA'])mx-=1;
-      if(keys['KeyD'])mx+=1;
-      mx+=moveVec.x; mz+=moveVec.y;
-      const len=Math.hypot(mx,mz);
-      return len>1?{x:mx/len,z:mz/len}:{x:mx,z:mz};
-    }
-
-    function tryJump(){
-      if(player.onGround){
-        player.vel.y=8.5; // stronger jump
-        player.onGround=false;
+    // ====== Level data ======
+    // Each level: platforms array of {pos:[x,y,z], size:[w,h,d], type:'platform'|'hazard'|'goal'}
+    const levels = [
+      {
+        name: "Level 1",
+        start: [0, 1, 0],
+        npcHome: [-8, 4, -8],
+        platforms: [
+          { pos:[0,0,0], size:[8,1,8], type:'platform' },
+          { pos:[8,1,0], size:[4,1,4], type:'platform' },
+          { pos:[12,2,2], size:[3,1,3], type:'platform' },
+          { pos:[16,3,4], size:[3,1,3], type:'platform' },
+          { pos:[20,3,6], size:[4,1,4], type:'goal' }
+        ]
+      },
+      {
+        name: "Level 2 - Rising Towers",
+        start: [0, 1, 0],
+        npcHome: [ -10, 6, -12 ],
+        platforms: [
+          { pos:[0,0,0], size:[10,1,10], type:'platform' },
+          { pos:[6,2,2], size:[3,1,3], type:'platform' },
+          { pos:[9,4,4], size:[3,1,3], type:'platform' },
+          { pos:[12,6,6], size:[3,1,3], type:'platform' },
+          { pos:[12,0,8], size:[6,1,4], type:'hazard' },
+          { pos:[16,6,8], size:[4,1,4], type:'goal' }
+        ]
+      },
+      {
+        name: "Level 3 - Sky Bridges",
+        start: [-4, 1, -6],
+        npcHome: [ -14, 8, -14 ],
+        platforms: [
+          { pos:[-4,0,-6], size:[8,1,8], type:'platform' },
+          { pos:[2,2,-2], size:[8,1,2], type:'platform' }, // narrow bridge
+          { pos:[10,3,0], size:[6,1,2], type:'platform' }, // narrower
+          { pos:[14,4,2], size:[4,1,2], type:'platform' }, // narrowest
+          { pos:[18,5,4], size:[4,1,4], type:'goal' }
+        ]
+      },
+      {
+        name: "Level 4 - Lava Caverns",
+        start: [0, 1, 0],
+        npcHome: [ -12, 5, -10 ],
+        platforms: [
+          { pos:[0,0,0], size:[9,1,9], type:'platform' },
+          { pos:[5,1,0], size:[3,1,3], type:'platform' },
+          { pos:[9,0,2], size:[5,1,4], type:'hazard' }, // lava
+          { pos:[12,2,4], size:[3,1,3], type:'platform' },
+          { pos:[16,3,6], size:[4,1,4], type:'goal' }
+        ]
+      },
+      {
+        name: "Level 5 - Final Fortress",
+        start: [-6, 1, 0],
+        npcHome: [ -16, 6, -16 ],
+        platforms: [
+          { pos:[-6,0,0], size:[10,1,10], type:'platform' },
+          { pos:[0,2,2], size:[3,1,3], type:'platform' },
+          { pos:[4,4,4], size:[3,1,3], type:'platform' },
+          { pos:[8,4,6], size:[6,1,2], type:'platform' },
+          { pos:[10,2,8], size:[6,1,4], type:'hazard' },
+          { pos:[14,5,10], size:[4,1,4], type:'goal' }
+        ]
       }
-    }
-    document.addEventListener('keydown',e=>{if(e.code==='Space')tryJump();});
+    ];
+    let currentLevelIndex = 0;
+
+    // ====== World objects ======
+    const world = new THREE.Group();
+    scene.add(world);
+
+    // Player
+    const playerGeo = new THREE.SphereGeometry(0.6, 24, 16);
+    const player = new THREE.Mesh(playerGeo, matPlayer);
+    player.position.set(0, 1, 0);
+    player.castShadow = true;
+    world.add(player);
+
+    // NPC (camera anchor for second-person)
+    const npcGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
+    const npc = new THREE.Mesh(npcGeo, matNpc);
+    npc.position.set(-8, 4, -8);
+    world.add(npc);
 
     // Physics
-    const GRAVITY=-9;
-    const MOVE_SPEED=6;
-    const AIR_CONTROL=0.4;
+    const gravity = -20; // units/sec^2
+    const moveSpeed = 8;
+    const airControl = 0.5;
+    const jumpSpeed = 9.5;
+    const damping = 0.92;
 
-    function collidePlatforms(nextPos,vel){
-      player.onGround=false;
-      for(const p of platforms){
-        const m=p.mesh;
-        const half={x:p.w/2,y:p.h/2,z:p.d/2};
-        const min=new THREE.Vector3(m.position.x-half.x,m.position.y-half.y,m.position.z-half.z);
-        const max=new THREE.Vector3(m.position.x+half.x,m.position.y+half.y,m.position.z+half.z);
-        const withinX=nextPos.x>(min.x-player.radius)&&nextPos.x<(max.x+player.radius);
-        const withinZ=nextPos.z>(min.z-player.radius)&&nextPos.z<(max.z+player.radius);
-        if(withinX&&withinZ){
-          const top=max.y;
-          if(vel.y<=0 && (player.pos.y-player.radius)>=top-0.05 && (nextPos.y-player.radius)<=top){
-            nextPos.y=top
+    let vel = new THREE.Vector3(0, 0, 0);
+    let onGround = false;
+
+    // Platforms storage
+    const platforms = [];
+    const bounds = []; // AABB: {min:THREE.Vector3, max:THREE.Vector3, type, mesh}
+
+    function clearLevel() {
+      for (const p of platforms) world.remove(p);
+      platforms.length = 0;
+      bounds.length = 0;
+    }
+
+    function addBox(pos, size, type) {
+      const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
+      const mat = type === 'goal' ? matGoal : (type === 'hazard' ? matHazard : matPlatform);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      world.add(mesh);
+      platforms.push(mesh);
+      const half = new THREE.Vector3(size[0]/2, size[1]/2, size[2]/2);
+      const min = new THREE.Vector3().copy(mesh.position).sub(half);
+      const max = new THREE.Vector3().copy(mesh.position).add(half);
+      bounds.push({ min, max, type, mesh });
+    }
+
+    function loadLevel(i) {
+      clearLevel();
+      currentLevelIndex = (i + levels.length) % levels.length;
+      const level = levels[currentLevelIndex];
+      document.getElementById('levelLabel').textContent = level.name;
+
+      for (const b of level.platforms) addBox(b.pos, b.size, b.type);
+
+      player.position.set(level.start[0], level.start[1], level.start[2]);
+      vel.set(0, 0, 0);
+
+      npc.position.set(level.npcHome[0], level.npcHome[1], level.npcHome[2]);
+    }
+
+    loadLevel(0);
+
+    // ====== Second-person camera ======
+    // Camera sits at NPC, looks at player; slight shoulder offset and smoothing.
+    const camOffset = new THREE.Vector3(0.6, 0.8, 0.0);
+    function updateCamera(dt) {
+      // NPC lightly lerps toward its "home" but also rotates to keep player centered
+      const level = levels[currentLevelIndex];
+      const home = new THREE.Vector3(level.npcHome[0], level.npcHome[1], level.npcHome[2]);
+      npc.position.lerp(home, Math.min(1, dt * 2));
+      npc.lookAt(player.position);
+
+      const desiredPos = new THREE.Vector3().copy(npc.position).add(camOffset);
+      camera.position.lerp(desiredPos, Math.min(1, dt * 6));
+      camera.lookAt(player.position);
+    }
+
+    // ====== Controls: joysticks and jump ======
+    const moveStick = document.getElementById('moveStick');
+    const lookStick = document.getElementById('lookStick');
+    const moveKnob = document.getElementById('moveKnob');
+    const lookKnob = document.getElementById('lookKnob');
+    const jumpBtn = document.getElementById('jumpBtn');
+
+    let moveVec = { x:0, y:0 };
+    let lookVec = { x:0, y:0 };
+    let yaw = 0; // player facing
+    let pitch = 0.2; // slight upward in case needed
+
+    function setupStick(area, knob, vec) {
+      let active = false, startX=0, startY=0;
+
+      function onDown(e) {
+        active = true;
+        const t = e.touches ? e.touches[0] : e;
+        startX = t.clientX; startY = t.clientY;
+        knob.style.transform = `translate(-50%, -50%)`;
+        area.style.background = 'rgba(255,255,255,0.12)';
+      }
+      function onMove(e) {
+        if (!active) return;
+        const t = e.touches ? e.touches[0] : e;
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        const radius = area.clientWidth/2 - 32;
+        const mag = Math.hypot(dx, dy);
+        const clamp = Math.min(mag, radius);
+        const nx = dx * (clamp/(mag||1));
+        const ny = dy * (clamp/(mag||1));
+        knob.style.left = `calc(50% + ${nx}px)`;
+        knob.style.top  = `calc(50% + ${ny}px)`;
+        vec.x = nx / radius;
+        vec.y = ny / radius;
+      }
+      function onUp() {
+        active = false;
+        vec.x = 0; vec.y = 0;
+        knob.style.left = `50%`; knob.style.top = `50%`;
+        area.style.background = 'rgba(255,255,255,0.06)';
+      }
+
+      area.addEventListener('touchstart', onDown);
+      area.addEventListener('touchmove',  onMove);
+      area.addEventListener('touchend',   onUp);
+      area.addEventListener('mousedown', onDown);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    }
+
+    setupStick(moveStick, moveKnob, moveVec);
+    setupStick(lookStick, lookKnob, lookVec);
+
+    jumpBtn.addEventListener('touchstart', () => tryJump(), { passive: true });
+    jumpBtn.addEventListener('mousedown', () => tryJump());
+
+    function tryJump() {
+      if (onGround) {
+        vel.y = jumpSpeed;
+        onGround = false;
+      }
+    }
+
+    // ====== Movement and physics ======
+    const tmp = new THREE.Vector3();
+    function applyInput(dt) {
+      // Look stick rotates player yaw relative to NPC view
+      yaw += lookVec.x * dt * 2.5; // horizontal rotate
+      pitch = Math.max(-1.0, Math.min(1.0, pitch - lookVec.y * dt * 2.0)); // not used for camera, but could affect aiming
+
+      // Move stick: local to yaw
+      const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      const right   = new THREE.Vector3(forward.z, 0, -forward.x);
+
+      const desired = new THREE.Vector3()
+        .addScaledVector(forward, -moveVec.y)  // up on stick moves forward relative to facing
+        .addScaledVector(right,   moveVec.x);
+
+      const speed = onGround ? moveSpeed : moveSpeed * airControl;
+      vel.x = vel.x * damping + desired.x * speed * (1 - damping);
+      vel.z = vel.z * damping + desired.z * speed * (1 - damping);
+
+      // Face movement direction if significant input
+      if (Math.hypot(desired.x, desired.z) > 0.1) {
+        // keep yaw as our facing; player mesh rotates for visual
+        player.rotation.y = yaw;
+      }
+    }
+
+    function integrate(dt) {
+      vel.y += gravity * dt;
+
+      // Predict position
+      const nextPos = new THREE.Vector3().copy(player.position);
+      nextPos.x += vel.x * dt;
+      nextPos.y += vel.y * dt;
+      nextPos.z += vel.z * dt;
+
+      // Simple sphere-AABB collision (resolve axis by axis)
+      const radius = 0.6;
+
+      // Check hazards/goals/platforms with AABB
+      onGround = false;
+      // Resolve X
+      let testPos = new THREE.Vector3(nextPos.x, player.position.y, player.position.z);
+      for (const b of bounds) {
+        if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
+          // Push out along X
+          if (player.position.x <= b.min.x) testPos.x = b.min.x - radius;
+          else if (player.position.x >= b.max.x) testPos.x = b.max.x + radius;
+          vel.x = 0;
+        }
+      }
+      // Resolve Z
+      testPos.set(testPos.x, player.position.y, nextPos.z);
+      for (const b of bounds) {
+        if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
+          if (player.position.z <= b.min.z) testPos.z = b.min.z - radius;
+          else if (player.position.z >= b.max.z) testPos.z = b.max.z + radius;
+          vel.z = 0;
+        }
+      }
+      // Resolve Y (grounding)
+      testPos.set(testPos.x, nextPos.y, testPos.z);
+      for (const b of bounds) {
+        if (sphereAabbIntersect(testPos, radius, b.min, b.max)) {
+          // Determine from above or below
+          if (player.position.y >= b.max.y) {
+            testPos.y = b.max.y + radius; // land on top
+            vel.y = 0;
+            onGround = true;
+          } else if (player.position.y <= b.min.y) {
+            testPos.y = b.min.y - radius; // hit from below
+            vel.y = 0;
+          }
+          // Hazard or Goal check only when contacting top surface
+          if (b.type === 'hazard' && onGround) {
+            // reset to start
+            const level = levels[currentLevelIndex];
+            player.position.set(level.start[0], level.start[1], level.start[2]);
+            vel.set(0, 0, 0);
+            onGround = false;
+            return; // skip remainder this frame
+          }
+          if (b.type === 'goal' && onGround) {
+            showOverlay(); // allow next level
+          }
+        }
+      }
+
+      player.position.copy(testPos);
+    }
+
+    function sphereAabbIntersect(center, r, min, max) {
+      // clamp center to box
+      const cx = Math.max(min.x, Math.min(center.x, max.x));
+      const cy = Math.max(min.y, Math.min(center.y, max.y));
+      const cz = Math.max(min.z, Math.min(center.z, max.z));
+      const dx = center.x - cx, dy = center.y - cy, dz = center.z - cz;
+      return (dx*dx + dy*dy + dz*dz) <= r*r;
+    }
+
+    // ====== Overlay / level control ======
+    const overlay = document.getElementById('overlay');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    function showOverlay() { overlay.classList.add('show'); paused = true; }
+    function hideOverlay() { overlay.classList.remove('show'); paused = false; }
+
+    resumeBtn.addEventListener('click', hideOverlay);
+    restartBtn.addEventListener('click', () => { loadLevel(currentLevelIndex); hideOverlay(); });
+    nextBtn.addEventListener('click', () => { loadLevel(currentLevelIndex + 1); hideOverlay(); });
+
+    let paused = false;
+
+    // ====== Ground plane (visual) ======
+    const floorGeo = new THREE.PlaneGeometry(200, 200);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0d0d12, roughness: 1, metalness: 0 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI/2;
+    floor.position.y = -0.5;
+    scene.add(floor);
+
+    // ====== Main loop ======
+    let last = performance.now();
+    function loop(now) {
+      requestAnimationFrame(loop);
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+      if (paused) return;
+
+      applyInput(dt);
+      integrate(dt);
+      updateCamera(dt);
+
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(loop);
+
+    // ====== Optional: keyboard (desktop testing) ======
+    const keys = {};
+    window.addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'Space') tryJump(); });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    function keyboardFallback(dt) {
+      // (Not wired into applyInput to keep mobile primary)
+      // Left/Right arrows tweak yaw, WSAD adjust moveVec
+    }
+
+    // ====== Prevent page scroll on touch ======
+    document.addEventListener('touchmove', (e) => { if (e.target.classList.contains('stick-area')) e.preventDefault(); }, { passive: false });
+  </script>
+</body>
+</html>
