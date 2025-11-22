@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>3D First Person Game With Levels</title>
+<title>3D FPS Game With Levels — Press E to Start</title>
 <style>
     body { margin: 0; overflow: hidden; background: #000; }
     #instructions, #levelMsg {
@@ -21,38 +21,34 @@
 </head>
 <body>
 <div id="instructions">
-    <h2>Click to Play</h2>
+    <h2>Press E to Start</h2>
     <p>W A S D = Move<br>Mouse = Look</p>
 </div>
-
 <div id="levelMsg"><h2>Level Complete!</h2></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
 
 <script>
 /* ---------------------------------------------------------
-   BASIC THREE.JS SETUP
+   CORE VARIABLES
 ---------------------------------------------------------*/
 let camera, scene, renderer;
 let controlsEnabled = false;
 
-const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 const speed = 8;
 
-let moveForward = false,
-    moveBackward = false,
-    moveLeft = false,
-    moveRight = false;
+let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
 
 let colliders = [];
 let goal;
 
-/* LEVEL DATA */
+/* ---------------------------------------------------------
+   LEVELS
+---------------------------------------------------------*/
 let currentLevel = 0;
 const levels = [
     {
-        // Level 1 walls
         walls: [
             {x:0, z:-5, rot:0},
             {x:0, z:-10, rot:0},
@@ -62,7 +58,6 @@ const levels = [
         goal: {x: 0, z: 5}
     },
     {
-        // Level 2 walls
         walls: [
             {x:3, z:-2, rot:0},
             {x:6, z:-2, rot:0},
@@ -74,7 +69,6 @@ const levels = [
         goal: {x: -8, z: 8}
     },
     {
-        // Level 3 walls
         walls: [
             {x: 0, z:-3, rot:0},
             {x: 0, z:-6, rot:0},
@@ -88,12 +82,12 @@ const levels = [
     }
 ];
 
+/* ---------------------------------------------------------
+   INITIALIZE
+---------------------------------------------------------*/
 init();
 animate();
 
-/* ---------------------------------------------------------
-   INITIAL SETUP
----------------------------------------------------------*/
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x202020);
@@ -115,20 +109,24 @@ function init() {
 }
 
 /* ---------------------------------------------------------
-   POINTER LOCK
+   POINTER LOCK — PRESS E TO START
 ---------------------------------------------------------*/
 function setupPointerLock() {
-    const instructions = document.getElementById('instructions');
-    instructions.addEventListener('click', () => {
-        renderer.domElement.requestPointerLock();
+    const instructions = document.getElementById("instructions");
+
+    // Press E to begin control
+    document.addEventListener("keydown", (e) => {
+        if (e.code === "KeyE" && !controlsEnabled) {
+            renderer.domElement.requestPointerLock();
+        }
     });
 
-    document.addEventListener('pointerlockchange', () => {
+    document.addEventListener("pointerlockchange", () => {
         controlsEnabled = (document.pointerLockElement === renderer.domElement);
         instructions.style.display = controlsEnabled ? "none" : "block";
     });
 
-    document.addEventListener('mousemove', (e) => {
+    document.addEventListener("mousemove", (e) => {
         if (!controlsEnabled) return;
         camera.rotation.y -= e.movementX * 0.002;
         camera.rotation.x -= e.movementY * 0.002;
@@ -137,21 +135,21 @@ function setupPointerLock() {
 }
 
 /* ---------------------------------------------------------
-   MOVEMENT
+   INPUT MOVEMENT
 ---------------------------------------------------------*/
 function setupControls() {
-    document.addEventListener('keydown', (e) => {
-        if (e.code === 'KeyW') moveForward = true;
-        if (e.code === 'KeyS') moveBackward = true;
-        if (e.code === 'KeyA') moveLeft = true;
-        if (e.code === 'KeyD') moveRight = true;
+    document.addEventListener("keydown", (e) => {
+        if (e.code === "KeyW") moveForward = true;
+        if (e.code === "KeyS") moveBackward = true;
+        if (e.code === "KeyA") moveLeft = true;
+        if (e.code === "KeyD") moveRight = true;
     });
 
-    document.addEventListener('keyup', (e) => {
-        if (e.code === 'KeyW') moveForward = false;
-        if (e.code === 'KeyS') moveBackward = false;
-        if (e.code === 'KeyA') moveLeft = false;
-        if (e.code === 'KeyD') moveRight = false;
+    document.addEventListener("keyup", (e) => {
+        if (e.code === "KeyW") moveForward = false;
+        if (e.code === "KeyS") moveBackward = false;
+        if (e.code === "KeyA") moveLeft = false;
+        if (e.code === "KeyD") moveRight = false;
     });
 }
 
@@ -159,9 +157,10 @@ function setupControls() {
    WORLD (ground & light)
 ---------------------------------------------------------*/
 function createWorld() {
-    const groundGeo = new THREE.PlaneGeometry(200, 200);
-    const groundMat = new THREE.MeshPhongMaterial({ color: 0x444444 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(200, 200),
+        new THREE.MeshPhongMaterial({ color: 0x444444 })
+    );
     ground.rotation.x = -Math.PI/2;
     scene.add(ground);
 
@@ -170,19 +169,19 @@ function createWorld() {
 }
 
 /* ---------------------------------------------------------
-   LOAD A LEVEL
+   LOAD LEVEL
 ---------------------------------------------------------*/
 function loadLevel(n) {
-    // Remove old walls & goal
     colliders.forEach(w => scene.remove(w));
     colliders = [];
+
     if (goal) scene.remove(goal);
 
     const level = levels[n];
 
-    // Add walls
     const wallGeo = new THREE.BoxGeometry(4, 3, 1);
     const wallMat = new THREE.MeshPhongMaterial({ color: 0x8888ff });
+
     for (const w of level.walls) {
         const wall = new THREE.Mesh(wallGeo, wallMat);
         wall.position.set(w.x, 1.5, w.z);
@@ -191,9 +190,11 @@ function loadLevel(n) {
         colliders.push(wall);
     }
 
-    // Add goal
     const goalGeo = new THREE.BoxGeometry(1, 1, 1);
-    const goalMat = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x00ff00 });
+    const goalMat = new THREE.MeshPhongMaterial({
+        color: 0x00ff00,
+        emissive: 0x00ff00
+    });
     goal = new THREE.Mesh(goalGeo, goalMat);
     goal.position.set(level.goal.x, 0.5, level.goal.z);
     scene.add(goal);
@@ -211,11 +212,10 @@ function checkCollision(pos) {
 }
 
 /* ---------------------------------------------------------
-   LEVEL COMPLETE CHECK
+   LEVEL GOAL CHECK
 ---------------------------------------------------------*/
 function checkGoal() {
-    const dist = camera.position.distanceTo(goal.position);
-    if (dist < 1.2) {
+    if (camera.position.distanceTo(goal.position) < 1.2) {
         completeLevel();
     }
 }
@@ -226,7 +226,6 @@ function completeLevel() {
 
     setTimeout(() => {
         msg.style.display = "none";
-
         currentLevel = (currentLevel + 1) % levels.length;
         loadLevel(currentLevel);
         camera.position.set(0, 1.6, 5);
@@ -247,11 +246,12 @@ function animate() {
         if (moveBackward) direction.z += 1;
         if (moveLeft) direction.x -= 1;
         if (moveRight) direction.x += 1;
+
         direction.normalize();
 
         const angle = camera.rotation.y;
-        const dx = direction.x*Math.cos(angle) - direction.z*Math.sin(angle);
-        const dz = direction.x*Math.sin(angle) + direction.z*Math.cos(angle);
+        const dx = direction.x * Math.cos(angle) - direction.z * Math.sin(angle);
+        const dz = direction.x * Math.sin(angle) + direction.z * Math.cos(angle);
 
         const newPos = camera.position.clone();
         newPos.x += dx * speed * delta;
@@ -268,7 +268,7 @@ function animate() {
 }
 
 /* ---------------------------------------------------------
-   WINDOW RESIZE
+   HANDLE RESIZE
 ---------------------------------------------------------*/
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
