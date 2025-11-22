@@ -31,7 +31,6 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
 (() => {
-  // Scene setup
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b1026);
 
@@ -41,7 +40,6 @@
 
   const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 500);
 
-  // Lighting
   scene.add(new THREE.HemisphereLight(0x8a5cff,0x0b1026,0.9));
   const dir = new THREE.DirectionalLight(0xffffff,1.0);
   dir.position.set(40,50,25);
@@ -53,15 +51,19 @@
   scene.add(ground);
 
   // Platforms
-  const plat1 = new THREE.Mesh(new THREE.BoxGeometry(8,1,8), new THREE.MeshStandardMaterial({color:0x61e1ff}));
-  plat1.position.set(0,2,-10);
-  scene.add(plat1);
-  const plat2 = new THREE.Mesh(new THREE.BoxGeometry(8,1,8), new THREE.MeshStandardMaterial({color:0x61e1ff}));
-  plat2.position.set(12,4,-15);
-  scene.add(plat2);
+  const platforms=[];
+  function addPlatform(x,y,z){
+    const p=new THREE.Mesh(new THREE.BoxGeometry(8,1,8), new THREE.MeshStandardMaterial({color:0x61e1ff}));
+    p.position.set(x,y,z);
+    scene.add(p);
+    platforms.push(p);
+  }
+  addPlatform(0,2,-10);
+  addPlatform(12,4,-15);
+  addPlatform(-8,3,-20);
 
-  // Player capsule
-  const player={pos:new THREE.Vector3(0,2,5), vel:new THREE.Vector3(), yaw:0, grounded:false, speed:6, jumpVel:7.5};
+  // Player
+  const player={pos:new THREE.Vector3(0,2,5), vel:new THREE.Vector3(), yaw:0, grounded:false, speed:6, jumpVel:15}; // jump 2x stronger
   const playerMesh=new THREE.Mesh(new THREE.CapsuleGeometry(0.5,1,8,16),new THREE.MeshStandardMaterial({color:0xff7aa2}));
   scene.add(playerMesh);
 
@@ -95,22 +97,42 @@
   // Jump button
   document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=player.jumpVel;player.grounded=false;}});
 
+  // Collision check
+  function getAABB(mesh){
+    mesh.geometry.computeBoundingBox();
+    const bb=mesh.geometry.boundingBox.clone();
+    bb.min.add(mesh.position);
+    bb.max.add(mesh.position);
+    return bb;
+  }
+  function checkCollisions(){
+    player.grounded=false;
+    const colliders=platforms.concat([ground]);
+    for(const m of colliders){
+      const bb=getAABB(m);
+      if(player.pos.x>=bb.min.x-0.5 && player.pos.x<=bb.max.x+0.5 &&
+         player.pos.z>=bb.min.z-0.5 && player.pos.z<=bb.max.z+0.5){
+        if(player.pos.y<=bb.max.y+0.1 && player.pos.y>=bb.max.y-1){
+          player.pos.y=bb.max.y;
+          player.vel.y=0;
+          player.grounded=true;
+        }
+      }
+    }
+  }
+
   // Loop
   function loop(){
     requestAnimationFrame(loop);
     const dt=0.016;
-    // Movement
     let fwd=moveStick.y; let str=moveStick.x;
     const len=Math.hypot(fwd,str); if(len>1){fwd/=len;str/=len;}
     const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
     player.pos.x+=(str*cos+fwd*sin)*player.speed*dt;
     player.pos.z+=(str*-sin+fwd*cos)*player.speed*dt;
-    // Gravity
-    player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt; player.grounded=false;
-    if(player.pos.y<=2){player.pos.y=2;player.vel.y=0;player.grounded=true;}
-    // Update mesh
+    player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt;
+    checkCollisions();
     playerMesh.position.copy(player.pos);
-    // Camera rotation from right stick
     player.yaw-=lookStick.x*2.5*dt;
     updateCamera();
     renderer.render(scene,camera);
