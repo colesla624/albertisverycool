@@ -2,131 +2,107 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>First Person Platformer — Dual Joysticks</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>First Person Game Hub</title>
 <style>
-  html, body { margin:0; height:100%; overflow:hidden; background:#0b1026; font-family:sans-serif; color:#e9ecff; }
-  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); font-size:14px; text-shadow:0 2px 8px rgba(0,0,0,0.5); }
-  .stick {
-    position:fixed; bottom:16px; width:120px; height:120px; border-radius:50%;
-    background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
-    touch-action:none; backdrop-filter:blur(6px);
+  body { margin:0; overflow:hidden; background:#0b1026; font-family:sans-serif; color:#e9ecff; }
+  #menu {
+    position:absolute; top:0; left:0; right:0; bottom:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:#0b1026; z-index:10;
   }
-  #stickLeft { left:16px; }
-  #stickRight { right:16px; }
-  .knob {
-    position:absolute; left:50%; top:50%; width:54px; height:54px; border-radius:50%;
-    transform:translate(-50%,-50%); background:rgba(97,225,255,0.35); border:1px solid rgba(97,225,255,0.6);
+  #menu h1 { margin-bottom:20px; }
+  #menu button {
+    margin:8px; padding:12px 24px; font-size:18px;
+    background:#202859; color:#e9ecff; border:1px solid #4450a8; border-radius:8px;
+    cursor:pointer;
   }
-  #btnJump {
-    position:fixed; right:18px; bottom:150px; width:76px; height:76px; border-radius:50%;
-    background:linear-gradient(180deg,#2d3a7a,#202859); border:1px solid #4450a8; color:#e9ecff; font-size:16px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.4); touch-action:none;
-  }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); font-size:14px; display:none; }
 </style>
 </head>
 <body>
-<div id="hud">Crystals: <span id="score">0</span></div>
-<div id="stickLeft" class="stick"><div class="knob"></div></div>
-<div id="stickRight" class="stick"><div class="knob"></div></div>
-<button id="btnJump">Jump</button>
+<div id="menu">
+  <h1>Game Hub</h1>
+  <button onclick="startGame('platformer')">Platformer</button>
+  <button onclick="startGame('maze')">Maze Explorer</button>
+  <button onclick="startGame('shooter')">Shooter Demo</button>
+</div>
+<div id="hud">HUD</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
-(() => {
-  // Scene setup
-  const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x0b1026, 35, 160);
+let scene, camera, renderer, loopId;
+const hud = document.getElementById("hud");
 
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
+function initRenderer(){
+  renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
+  window.addEventListener("resize", ()=> {
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
 
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
+function startGame(type){
+  document.getElementById("menu").style.display="none";
+  hud.style.display="block";
+  if(!renderer) initRenderer();
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.set(0,2,5);
 
   // Lighting
-  scene.add(new THREE.HemisphereLight(0x8a5cff, 0x0b1026, 0.8));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-  dir.position.set(30, 40, 20);
-  scene.add(dir);
+  scene.add(new THREE.HemisphereLight(0x8a5cff,0x0b1026,0.8));
+  const dir = new THREE.DirectionalLight(0xffffff,0.8);
+  dir.position.set(20,30,10); scene.add(dir);
 
-  // Materials
-  const matGround = new THREE.MeshStandardMaterial({ color:0x1b2250 });
-  const matPlat = new THREE.MeshStandardMaterial({ color:0x61e1ff, emissive:0x103a46, emissiveIntensity:0.35 });
-  const matCrystal = new THREE.MeshStandardMaterial({ color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6 });
+  // Game type
+  if(type==="platformer"){ setupPlatformer(); }
+  if(type==="maze"){ setupMaze(); }
+  if(type==="shooter"){ setupShooter(); }
 
-  // Ground
-  const ground = new THREE.Mesh(new THREE.BoxGeometry(40, 1, 40), matGround);
-  ground.position.y = -0.5;
-  scene.add(ground);
+  cancelAnimationFrame(loopId);
+  loop();
+}
 
-  // Platforms
-  const platforms = [];
-  function addPlatform(x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(6,1,6), matPlat); m.position.set(x,y,z); scene.add(m); platforms.push(m); }
-  addPlatform(6,2,0); addPlatform(12,3,0); addPlatform(18,4,0); addPlatform(24,5,0);
+function setupPlatformer(){
+  hud.textContent="Platformer: collect crystals!";
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(40,1,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
+  ground.position.y=-0.5; scene.add(ground);
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(6,1,6), new THREE.MeshStandardMaterial({color:0x61e1ff}));
+  plat.position.set(0,2,0); scene.add(plat);
+  const crystal = new THREE.Mesh(new THREE.ConeGeometry(0.5,1.5,6), new THREE.MeshStandardMaterial({color:0xffd46b}));
+  crystal.position.set(0,3,0); scene.add(crystal);
+}
 
-  // Crystals
-  const crystals = [];
-  function addCrystal(x,y,z){ const c=new THREE.Mesh(new THREE.ConeGeometry(0.6,1.6,8), matCrystal); c.position.set(x,y+1.1,z); scene.add(c); crystals.push(c); }
-  addCrystal(12,3,0); addCrystal(24,5,0);
-
-  // Player
-  const player={pos:new THREE.Vector3(0,2,5),vel:new THREE.Vector3(),yaw:0,pitch:0,grounded:false,radius:0.6,speed:6,jumpVel:5.5};
-  camera.position.copy(player.pos);
-
-  // HUD
-  let score=0; const scoreEl=document.getElementById("score");
-
-  // Joysticks
-  let moveStick={x:0,y:0}, lookStick={x:0,y:0};
-  function setupStick(el,onMove){
-    const knob=el.querySelector(".knob"); let active=false;
-    el.addEventListener("touchstart",()=>{active=true;},{passive:true});
-    el.addEventListener("touchmove",e=>{
-      if(!active)return; const rect=el.getBoundingClientRect(); const t=e.touches[0];
-      const dx=t.clientX-(rect.left+rect.width/2); const dy=t.clientY-(rect.top+rect.height/2);
-      const r=50,mag=Math.hypot(dx,dy),cl=mag>r?r/mag:1; const nx=dx*cl,ny=dy*cl;
-      knob.style.transform=`translate(${nx}px,${ny}px) translate(-50%,-50%)`; onMove(nx/r,ny/r); e.preventDefault();
-    },{passive:false});
-    function reset(){ active=false; knob.style.transform="translate(-50%,-50%)"; onMove(0,0); }
-    el.addEventListener("touchend",reset,{passive:true});
-    el.addEventListener("touchcancel",reset,{passive:true});
+function setupMaze(){
+  hud.textContent="Maze Explorer: find your way!";
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
+  floor.rotation.x=-Math.PI/2; scene.add(floor);
+  const wallMat = new THREE.MeshStandardMaterial({color:0x61e1ff});
+  for(let i=-20;i<=20;i+=5){
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(1,3,5), wallMat);
+    wall.position.set(i,1.5,0); scene.add(wall);
   }
-  setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
-  setupStick(document.getElementById("stickRight"),(x,y)=>{lookStick.x=x;lookStick.y=y;});
+}
 
-  // Jump button (2x stronger)
-  function attemptJump(){ if(player.grounded){ player.vel.y = player.jumpVel * 2; player.grounded=false; } }
-  document.getElementById("btnJump").addEventListener("click",attemptJump);
-  document.getElementById("btnJump").addEventListener("touchstart",e=>{e.preventDefault();attemptJump();},{passive:false});
-
-  // Collision helper
-  function getAABB(mesh){ mesh.geometry.computeBoundingBox(); const bb=mesh.geometry.boundingBox.clone(); bb.min.add(mesh.position); bb.max.add(mesh.position); return bb; }
-  function resolveCollisions(pos, vel, radius){
-    let grounded=false;
-    const objs=platforms.concat([ground]);
-    for(const m of objs){
-      const bb=getAABB(m);
-      const minX=bb.min.x-radius, maxX=bb.max.x+radius;
-      const minY=bb.min.y-radius, maxY=bb.max.y+radius;
-      const minZ=bb.min.z-radius, maxZ=bb.max.z+radius;
-      if(pos.x>=minX&&pos.x<=maxX&&pos.y>=minY&&pos.y<=maxY&&pos.z>=minZ&&pos.z<=maxZ){
-        const penX=Math.min(maxX-pos.x,pos.x-minX);
-        const penY=Math.min(maxY-pos.y,pos.y-minY);
-        const penZ=Math.min(maxZ-pos.z,pos.z-minZ);
-        const minPen=Math.min(penX,penY,penZ);
-        if(minPen===penY){
-          if(pos.y>(bb.max.y+bb.min.y)/2){ pos.y=maxY; vel.y=Math.max(0,vel.y); grounded=true; }
-          else { pos.y=minY; vel.y=Math.min(0,vel.y); }
-        } else if(minPen===penX){ pos.x=(pos.x>(bb.max.x+bb.min.x)/2)?maxX:minX; vel.x=0; }
-        else { pos.z=(pos.z>(bb.max.z+bb.min.z)/2)?maxZ:minZ; vel.z=0; }
-      }
-    }
-    return grounded;
+function setupShooter(){
+  hud.textContent="Shooter Demo: shoot targets!";
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshStandardMaterial({color:0x1b2250}));
+  floor.rotation.x=-Math.PI/2; scene.add(floor);
+  const targetMat = new THREE.MeshStandardMaterial({color:0xff0000});
+  for(let i=0;i<5;i++){
+    const target = new THREE.Mesh(new THREE.BoxGeometry(1,1,0.2), targetMat);
+    target.position.set(-10+i*5,1.5,-10); scene.add(target);
   }
+}
 
-  // Resize
-  window.addEventListener("resize",()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
-
-  // Main loop
-  function loop(){
+function loop(){
+  loopId = requestAnimationFrame(loop);
+  renderer.render(scene,camera);
+}
+</script>
+</body>
+</html>
