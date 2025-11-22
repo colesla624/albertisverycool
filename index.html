@@ -63,12 +63,10 @@ npc.position.set(-8,4,-8);
 scene.add(npc);
 
 // Platforms
-const platforms = [];
 function addPlatform(x,y,z,w,h,d,color=0x333333){
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color}));
   mesh.position.set(x,y,z);
   scene.add(mesh);
-  platforms.push(mesh);
 }
 addPlatform(0,0,0,8,1,8); // ground
 addPlatform(5,2,0,3,1,3); // elevated
@@ -114,6 +112,7 @@ function update(dt){
   camera.lookAt(player.position);
 }
 
+// Main loop
 let last=performance.now();
 function animate(now){
   requestAnimationFrame(animate);
