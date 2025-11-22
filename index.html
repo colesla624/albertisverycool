@@ -1,384 +1,58 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>2D Platformer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <style>
-    html, body { margin:0; padding:0; height:100%; background:#1b1e26; font-family: system-ui, sans-serif; overflow:hidden; }
-    canvas { display:block; image-rendering: pixelated; }
-    /* HUD */
-    .hud { position:fixed; inset:0; pointer-events:none; }
-    .stick-area, .btn { pointer-events:auto; touch-action:none; user-select:none; }
-    .stick-area {
-      position:fixed; bottom:16px; left:16px; width:160px; height:160px;
-      border-radius:50%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);
-    }
-    .stick-knob {
-      position:absolute; left:50%; top:50%; width:62px; height:62px; border-radius:50%;
-      transform:translate(-50%,-50%); background: radial-gradient(#7fd, #3aa);
-      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
-    }
-    .btn {
-      position:fixed; right:16px; bottom:16px; width:96px; height:96px; border-radius:50%;
-      background: radial-gradient(#fff, #ddd); box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      display:grid; place-items:center; font-weight:700; color:#222;
-    }
-    .label {
-      position:fixed; left:50%; transform:translateX(-50%); top:8px; color:#fff; opacity:0.85; font-size:14px;
-    }
-  </style>
-</head>
-<body>
-<canvas id="game"></canvas>
-
-<div class="hud">
-  <div class="label" id="levelLabel">Level 1</div>
-  <div id="moveStick" class="stick-area"><div id="moveKnob" class="stick-knob"></div></div>
-  <div id="jumpBtn" class="btn">JUMP</div>
-</div>
-
-<script>
-(() => {
-  // ====== Canvas setup ======
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+// ====== Level data ======
+// 0 empty, 1 ground, 2 hazard, 3 checkpoint, 4 goal
+const levels = [
+  {
+    name: "Level 1 - First Steps",
+    width: 32, height: 16,
+    tiles: [
+      ...Array(14).fill(0).map(()=>Array(32).fill(0)),
+      // Row 14: stepping stones
+      (() => {
+        const row = Array(32).fill(0);
+        row[8]=1; row[10]=1; row[12]=1; row[14]=1; row[16]=1; row[18]=1; row[20]=1; row[22]=1; row[24]=1;
+        return row;
+      })(),
+      // Row 15: ground with checkpoint and goal
+      (() => {
+        const row = Array(32).fill(1);
+        row[2]=3; // checkpoint
+        row[28]=4; // goal
+        return row;
+      })(),
+    ],
+    start: { x: TILE*2, y: TILE*10 },
+    bg: { sky: "#1b1e26", far:"#1f2430", near:"#232a36" }
+  },
+  {
+    name: "Level 2 - The Gap",
+    width: 32, height: 16,
+    tiles: [
+      ...Array(13).fill(0).map(()=>Array(32).fill(0)),
+      // Row 13: small platforms
+      (() => { const r=Array(32).fill(0); r[6]=1;r[9]=1;r[12]=1;r[15]=1;r[18]=1;r[21]=1;r[24]=1;r[27]=1; return r; })(),
+      // Row 14: hazards mixed with ground
+      (() => { const r=Array(32).fill(0); for(let i=0;i<32;i++) r[i]=1; r[10]=2; r[18]=2; return r; })(),
+      // Row 15: solid ground with checkpoint and goal
+      (() => { const r=Array(32).fill(1); r[2]=3; r[29]=4; return r; })(),
+    ],
+    start: { x: TILE*2, y: TILE*9 },
+    bg: { sky: "#18212a", far:"#1b2430", near:"#1f2936" }
+  },
+  {
+    name: "Level 3 - Lava Lane",
+    width: 32, height: 16,
+    tiles: [
+      ...Array(12).fill(0).map(()=>Array(32).fill(0)),
+      // Row 12: alternating safe platforms
+      (() => { const r=Array(32).fill(0); for(let i=4;i<28;i+=4) r[i]=1; return r; })(),
+      // Row 13: hazards with gaps
+      (() => { const r=Array(32).fill(0); for(let i=6;i<26;i++) r[i]= (i%3===0?2:0); return r; })(),
+      // Row 14: ground with checkpoint
+      (() => { const r=Array(32).fill(1); r[2]=3; return r; })(),
+      // Row 15: ground with goal
+      (() => { const r=Array(32).fill(1); r[28]=4; return r; })(),
+    ],
+    start: { x: TILE*2, y: TILE*8 },
+    bg: { sky: "#141c24", far:"#172029", near:"#1a2430" }
   }
-  window.addEventListener('resize', resize, { passive: true });
-  resize();
-
-  // ====== Game constants ======
-  const TILE = 32;
-  const GRAVITY = 1800;  // px/s^2
-  const MOVE_SPEED = 280; // px/s
-  const JUMP_SPEED = 620; // px/s
-  const FRICTION = 0.86;
-
-  // ====== Level data ======
-  // 0 empty, 1 ground, 2 hazard, 3 checkpoint, 4 goal
-  const levels = [
-    {
-      name: "Level 1 - First Steps",
-      width: 32, height: 16,
-      tiles: [
-        // 16 rows of 32 columns (top to bottom)
-        // Row 0..13 mostly empty
-        ...Array(14).fill(0).map(()=>Array(32).fill(0)),
-        // Row 14: some platforms
-        (() => {
-          const row = Array(32).fill(0);
-          for (let i=0;i<32;i++) row[i] = i<8 ? 0 : (i<30 ? 1 : 0);
-          row[10]=1; row[11]=1; row[15]=1; row[19]=1; row[22]=1; row[23]=1; // stepping stones
-          return row;
-        })(),
-        // Row 15: ground with goal
-        (() => {
-          const row = Array(32).fill(1);
-          row[2]=3; // checkpoint
-          row[28]=4; // goal
-          return row;
-        })(),
-      ],
-      start: { x: TILE*2, y: TILE*10 },
-      bg: { sky: "#1b1e26", far:"#1f2430", near:"#232a36" }
-    },
-    {
-      name: "Level 2 - The Gap",
-      width: 32, height: 16,
-      tiles: [
-        ...Array(12).fill(0).map(()=>Array(32).fill(0)),
-        (() => { const r=Array(32).fill(0); r[6]=1;r[7]=1;r[8]=1;r[12]=1;r[16]=1;r[20]=1;r[24]=1;r[25]=1; return r; })(),
-        (() => { const r=Array(32).fill(0); r[5]=1;r[9]=1;r[13]=1;r[17]=1;r[21]=1;r[26]=1; return r; })(),
-        (() => { const r=Array(32).fill(0); r[4]=1;r[10]=2;r[14]=1;r[18]=2;r[22]=1;r[27]=1; return r; })(),
-        (() => { const r=Array(32).fill(1); r[2]=3; r[29]=4; return r; })(),
-      ],
-      start: { x: TILE*2, y: TILE*9 },
-      bg: { sky: "#18212a", far:"#1b2430", near:"#1f2936" }
-    },
-    {
-      name: "Level 3 - Lava Lane",
-      width: 32, height: 16,
-      tiles: [
-        ...Array(10).fill(0).map(()=>Array(32).fill(0)),
-        (() => { const r=Array(32).fill(0); for(let i=6;i<26;i++) r[i]=(i%2?2:0); return r; })(),
-        (() => { const r=Array(32).fill(0); r[4]=1;r[8]=1;r[12]=1;r[16]=1;r[20]=1;r[24]=1; return r; })(),
-        (() => { const r=Array(32).fill(0); r[5]=1;r[9]=1;r[13]=1;r[17]=1;r[21]=1;r[25]=1; return r; })(),
-        (() => { const r=Array(32).fill(1); r[2]=3; r[28]=4; return r; })(),
-        Array(32).fill(1),
-      ],
-      start: { x: TILE*2, y: TILE*8 },
-      bg: { sky: "#141c24", far:"#172029", near:"#1a2430" }
-    }
-  ];
-  let levelIndex = 0;
-
-  // ====== Player ======
-  const player = {
-    x: 0, y: 0,
-    w: 24, h: 28,
-    vx: 0, vy: 0,
-    onGround: false,
-    facing: 1,
-    checkpoint: null
-  };
-
-  function resetPlayerToStart() {
-    const L = levels[levelIndex];
-    player.x = L.start.x;
-    player.y = L.start.y;
-    player.vx = 0; player.vy = 0;
-    player.onGround = false;
-    player.checkpoint = { x: L.start.x, y: L.start.y };
-  }
-
-  // ====== Input (mobile joystick + keyboard fallback) ======
-  const moveStick = document.getElementById('moveStick');
-  const moveKnob = document.getElementById('moveKnob');
-  const jumpBtn = document.getElementById('jumpBtn');
-  let moveVec = { x: 0, y: 0 };
-  let keys = {};
-
-  function setupMoveStick() {
-    let active=false,startX=0,startY=0;
-    moveStick.addEventListener('touchstart', e => {
-      active = true; const t = e.touches[0]; startX = t.clientX; startY = t.clientY;
-    });
-    moveStick.addEventListener('touchmove', e => {
-      if (!active) return;
-      const t = e.touches[0]; const dx = t.clientX - startX; const dy = t.clientY - startY;
-      const radius = moveStick.clientWidth/2 - 32;
-      const mag = Math.hypot(dx, dy);
-      const clamp = Math.min(mag, radius);
-      const nx = dx * (clamp/(mag||1)), ny = dy * (clamp/(mag||1));
-      moveKnob.style.left = `calc(50% + ${nx}px)`;
-      moveKnob.style.top  = `calc(50% + ${ny}px)`;
-      moveVec.x = nx / radius; moveVec.y = ny / radius;
-    }, { passive: false });
-    moveStick.addEventListener('touchend', () => {
-      active = false; moveVec.x = 0; moveVec.y = 0; moveKnob.style.left='50%'; moveKnob.style.top='50%';
-    });
-  }
-  setupMoveStick();
-
-  jumpBtn.addEventListener('touchstart', () => tryJump(), { passive: true });
-
-  window.addEventListener('keydown', (e) => {
-    keys[e.code] = true;
-    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') tryJump();
-  });
-  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-  function tryJump() {
-    if (player.onGround) {
-      player.vy = -JUMP_SPEED;
-      player.onGround = false;
-    }
-  }
-
-  // ====== Collision helpers ======
-  function tileAt(px, py) {
-    const L = levels[levelIndex];
-    const tx = Math.floor(px / TILE);
-    const ty = Math.floor(py / TILE);
-    if (tx < 0 || ty < 0 || tx >= L.width || ty >= L.height) return 0;
-    return L.tiles[ty][tx];
-  }
-  function rectVsTiles(px, py, w, h) {
-    const tilesHit = [];
-    const L = levels[levelIndex];
-    const x0 = Math.floor(px / TILE), y0 = Math.floor(py / TILE);
-    const x1 = Math.floor((px + w) / TILE), y1 = Math.floor((py + h) / TILE);
-    for (let ty = y0; ty <= y1; ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
-        if (tx < 0 || ty < 0 || tx >= L.width || ty >= L.height) continue;
-        const t = L.tiles[ty][tx];
-        if (t !== 0) tilesHit.push({ tx, ty, t });
-      }
-    }
-    return tilesHit;
-  }
-
-  // ====== Level management ======
-  function loadLevel(i) {
-    levelIndex = (i + levels.length) % levels.length;
-    document.getElementById('levelLabel').textContent = levels[levelIndex].name;
-    resetPlayerToStart();
-  }
-  loadLevel(0);
-
-  // ====== Update loop ======
-  let last = performance.now();
-  function update(now) {
-    const dt = Math.min(0.033, (now - last) / 1000); // cap 30 FPS delta
-    last = now;
-
-    // Input to velocity
-    const left = keys['ArrowLeft'] || keys['KeyA'] || moveVec.x < -0.2;
-    const right = keys['ArrowRight'] || keys['KeyD'] || moveVec.x > 0.2;
-
-    if (left && !right) { player.vx = -MOVE_SPEED; player.facing = -1; }
-    else if (right && !left) { player.vx = MOVE_SPEED; player.facing = 1; }
-    else { player.vx *= FRICTION; if (Math.abs(player.vx) < 4) player.vx = 0; }
-
-    // Gravity
-    player.vy += GRAVITY * dt;
-
-    // Horizontal move + resolve
-    let nx = player.x + player.vx * dt;
-    let ny = player.y;
-    let hits = rectVsTiles(nx, ny, player.w, player.h);
-    for (const hit of hits) {
-      if (hit.t === 1 || hit.t === 2 || hit.t === 3 || hit.t === 4) {
-        const txWorld = hit.tx * TILE;
-        const tileRect = { x: txWorld, y: hit.ty * TILE, w: TILE, h: TILE };
-        if (player.vx > 0) nx = tileRect.x - player.w - 0.01;
-        else if (player.vx < 0) nx = tileRect.x + tileRect.w + 0.01;
-        player.vx = 0;
-      }
-    }
-    player.x = nx;
-
-    // Vertical move + resolve
-    ny = player.y + player.vy * dt;
-    hits = rectVsTiles(player.x, ny, player.w, player.h);
-    player.onGround = false;
-    for (const hit of hits) {
-      const txWorld = hit.tx * TILE;
-      const tileRect = { x: txWorld, y: hit.ty * TILE, w: TILE, h: TILE };
-      // Solid ground
-      if (hit.t === 1 || hit.t === 3 || hit.t === 4) {
-        if (player.vy > 0) { // falling
-          ny = tileRect.y - player.h - 0.01;
-          player.vy = 0;
-          player.onGround = true;
-          // checkpoint
-          if (hit.t === 3) player.checkpoint = { x: player.x, y: ny };
-          // goal
-          if (hit.t === 4) loadLevel(levelIndex + 1);
-        } else if (player.vy < 0) { // jumping up
-          ny = tileRect.y + tileRect.h + 0.01;
-          player.vy = 0;
-        }
-      }
-      // Hazard
-      if (hit.t === 2 && player.vy >= 0) {
-        // respawn at checkpoint or start
-        const cp = player.checkpoint || levels[levelIndex].start;
-        player.x = cp.x; player.y = cp.y; player.vx = 0; player.vy = 0; player.onGround = false;
-      }
-    }
-    player.y = ny;
-
-    draw();
-    requestAnimationFrame(update);
-  }
-  requestAnimationFrame(update);
-
-  // ====== Camera (follow player) ======
-  const camera2D = { x: 0, y: 0 };
-  function applyCamera() {
-    const L = levels[levelIndex];
-    const viewportW = canvas.width, viewportH = canvas.height;
-    camera2D.x = Math.max(0, Math.min(player.x + player.w/2 - viewportW/2, L.width * TILE - viewportW));
-    camera2D.y = Math.max(0, Math.min(player.y + player.h/2 - viewportH/2, L.height * TILE - viewportH));
-  }
-
-  // ====== Drawing ======
-  function drawBg() {
-    const bg = levels[levelIndex].bg;
-    // Sky
-    ctx.fillStyle = bg.sky; ctx.fillRect(0,0,canvas.width,canvas.height);
-    // Parallax far
-    ctx.fillStyle = bg.far;
-    for (let i=0;i<canvas.width;i+=180) {
-      ctx.fillRect(i - (camera2D.x*0.1)%180, canvas.height-120, 120, 120);
-    }
-    // Parallax near
-    ctx.fillStyle = bg.near;
-    for (let i=0;i<canvas.width;i+=220) {
-      ctx.fillRect(i - (camera2D.x*0.2)%220, canvas.height-60, 160, 60);
-    }
-  }
-
-  function drawTiles() {
-    const L = levels[levelIndex];
-    const x0 = Math.floor(camera2D.x / TILE);
-    const y0 = Math.floor(camera2D.y / TILE);
-    const x1 = Math.ceil((camera2D.x + canvas.width) / TILE);
-    const y1 = Math.ceil((camera2D.y + canvas.height) / TILE);
-    for (let ty = y0; ty < y1; ty++) {
-      for (let tx = x0; tx < x1; tx++) {
-        if (tx < 0 || ty < 0 || tx >= L.width || ty >= L.height) continue;
-        const t = L.tiles[ty][tx];
-        if (t === 0) continue;
-        const x = tx * TILE - camera2D.x;
-        const y = ty * TILE - camera2D.y;
-        // Styles
-        if (t === 1) { // ground
-          ctx.fillStyle = "#3b4252";
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = "#4c566a";
-          ctx.fillRect(x, y, TILE, 6);
-        } else if (t === 2) { // hazard (lava)
-          ctx.fillStyle = "#b71c1c";
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = "#ff5252";
-          for (let i=0;i<4;i++) ctx.fillRect(x+i*8, y+TILE-8, 6, 6);
-        } else if (t === 3) { // checkpoint
-          ctx.fillStyle = "#2e7d32";
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = "#66bb6a";
-          ctx.fillRect(x+12, y-18, 6, 18); // flag pole
-          ctx.fillStyle = "#a5d6a7";
-          ctx.fillRect(x+18, y-18, 10, 8); // flag
-        } else if (t === 4) { // goal
-          ctx.fillStyle = "#1e88e5";
-          ctx.fillRect(x, y, TILE, TILE);
-          ctx.fillStyle = "#64b5f6";
-          ctx.fillRect(x+12, y-22, 6, 22); // goal pole
-          ctx.fillStyle = "#bbdefb";
-          ctx.fillRect(x+18, y-22, 14, 10); // banner
-        }
-      }
-    }
-  }
-
-  function drawPlayer() {
-    const x = Math.floor(player.x - camera2D.x);
-    const y = Math.floor(player.y - camera2D.y);
-    // Body
-    ctx.fillStyle = "#ffd166";
-    ctx.fillRect(x, y, player.w, player.h);
-    // Face
-    ctx.fillStyle = "#073b4c";
-    const eyeY = y + 8;
-    if (player.facing === 1) { // right
-      ctx.fillRect(x + player.w - 10, eyeY, 6, 6);
-    } else { // left
-      ctx.fillRect(x + 4, eyeY, 6, 6);
-    }
-    // Feet shadow
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(x, y + player.h - 4, player.w, 4);
-    ctx.globalAlpha = 1;
-  }
-
-  function draw() {
-    applyCamera();
-    drawBg();
-    drawTiles();
-    drawPlayer();
-  }
-
-  // ====== Prevent page scroll on touch over stick ======
-  document.addEventListener('touchmove', (e) => {
-    if (e.target.classList.contains('stick-area')) e.preventDefault();
-  }, { passive: false });
-})();
-</script>
-</body>
-</html>
+];
