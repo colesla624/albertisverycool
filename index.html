@@ -3,21 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>First Person Game Hub</title>
+<title>Third Person Platformer — Mobile Controls</title>
 <style>
-  body { margin:0; overflow:hidden; background:#0b1026; font-family:sans-serif; color:#e9ecff; }
-  #menu {
-    position:absolute; top:0; left:0; right:0; bottom:0;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background:#0b1026; z-index:10;
-  }
-  #menu h1 { margin-bottom:20px; }
-  #menu button {
-    margin:8px; padding:12px 24px; font-size:18px;
-    background:#202859; color:#e9ecff; border:1px solid #4450a8; border-radius:8px;
-    cursor:pointer;
-  }
-  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); font-size:14px; display:none; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#0b1026; font-family:sans-serif; color:#e9ecff; }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); font-size:14px; }
   .stick {
     position:fixed; bottom:16px; width:120px; height:120px; border-radius:50%;
     background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
@@ -36,110 +25,118 @@
 </style>
 </head>
 <body>
-<div id="menu">
-  <h1>Game Hub</h1>
-  <button onclick="startGame('platformer')">Platformer</button>
-  <button onclick="startGame('maze')">Maze Explorer</button>
-  <button onclick="startGame('shooter')">Shooter Demo</button>
-</div>
-<div id="hud">HUD</div>
+<div id="hud">Crystals: <span id="score">0</span></div>
 <div id="stickLeft" class="stick"><div class="knob"></div></div>
 <div id="stickRight" class="stick"><div class="knob"></div></div>
 <button id="btnJump">Jump</button>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
 <script>
-let scene, camera, renderer, loopId;
-let moveStick={x:0,y:0}, lookStick={x:0,y:0};
-let player={pos:new THREE.Vector3(0,2,5),vel:new THREE.Vector3(),yaw:0,pitch:0,grounded:false,speed:6,jumpVel:5.5};
-const hud=document.getElementById("hud");
+(() => {
+  // Scene setup
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b1026);
+  scene.fog = new THREE.Fog(0x0b1026, 60, 200);
 
-function initRenderer(){
-  renderer=new THREE.WebGLRenderer({antialias:true});
-  renderer.setSize(window.innerWidth,window.innerHeight);
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
-  window.addEventListener("resize",()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
-}
 
-function setupStick(el,onMove){
-  const knob=el.querySelector(".knob"); let active=false;
-  el.addEventListener("touchstart",()=>{active=true;},{passive:true});
-  el.addEventListener("touchmove",e=>{
-    if(!active)return; const rect=el.getBoundingClientRect(); const t=e.touches[0];
-    const dx=t.clientX-(rect.left+rect.width/2); const dy=t.clientY-(rect.top+rect.height/2);
-    const r=50,mag=Math.hypot(dx,dy),cl=mag>r?r/mag:1; const nx=dx*cl,ny=dy*cl;
-    knob.style.transform=`translate(${nx}px,${ny}px) translate(-50%,-50%)`; onMove(nx/r,ny/r); e.preventDefault();
-  },{passive:false});
-  function reset(){active=false;knob.style.transform="translate(-50%,-50%)";onMove(0,0);}
-  el.addEventListener("touchend",reset,{passive:true});
-  el.addEventListener("touchcancel",reset,{passive:true});
-}
-setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
-setupStick(document.getElementById("stickRight"),(x,y)=>{lookStick.x=x;lookStick.y=y;});
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 500);
 
-document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=player.jumpVel*2;player.grounded=false;}});
+  // Lighting
+  scene.add(new THREE.HemisphereLight(0x8a5cff,0x0b1026,0.9));
+  const dir = new THREE.DirectionalLight(0xffffff,1.0);
+  dir.position.set(40,50,25);
+  scene.add(dir);
 
-function startGame(type){
-  document.getElementById("menu").style.display="none";
-  hud.style.display="block";
-  if(!renderer) initRenderer();
-  scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
-  camera.position.copy(player.pos);
-  scene.add(new THREE.HemisphereLight(0x8a5cff,0x0b1026,0.8));
-  const dir=new THREE.DirectionalLight(0xffffff,0.8);dir.position.set(20,30,10);scene.add(dir);
+  // Materials
+  const matGround = new THREE.MeshStandardMaterial({ color:0x1b2250 });
+  const matPlat = new THREE.MeshStandardMaterial({ color:0x61e1ff, emissive:0x103a46, emissiveIntensity:0.25 });
+  const matCrystal = new THREE.MeshStandardMaterial({ color:0xffd46b, emissive:0x704f10, emissiveIntensity:0.6 });
+  const matPlayer = new THREE.MeshStandardMaterial({ color:0xff7aa2 });
 
-  if(type==="platformer"){setupPlatformer();}
-  if(type==="maze"){setupMaze();}
-  if(type==="shooter"){setupShooter();}
+  // Ground
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(80,2,80), matGround);
+  ground.position.y=-1;
+  scene.add(ground);
 
-  cancelAnimationFrame(loopId);
-  loop();
-}
+  // Platforms
+  const platforms=[];
+  function addPlatform(x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(8,1,8),matPlat); m.position.set(x,y,z); scene.add(m); platforms.push(m); }
+  addPlatform(0,2,-10); addPlatform(14,4,-12); addPlatform(26,6,-8);
 
-function setupPlatformer(){
-  hud.textContent="Platformer: collect crystals!";
-  const ground=new THREE.Mesh(new THREE.BoxGeometry(40,1,40),new THREE.MeshStandardMaterial({color:0x1b2250}));
-  ground.position.y=-0.5;scene.add(ground);
-  const plat=new THREE.Mesh(new THREE.BoxGeometry(6,1,6),new THREE.MeshStandardMaterial({color:0x61e1ff}));
-  plat.position.set(0,2,0);scene.add(plat);
-  const crystal=new THREE.Mesh(new THREE.ConeGeometry(0.5,1.5,6),new THREE.MeshStandardMaterial({color:0xffd46b}));
-  crystal.position.set(0,3,0);scene.add(crystal);
-}
+  // Crystals
+  const crystals=[];
+  function addCrystal(x,y,z){ const c=new THREE.Mesh(new THREE.ConeGeometry(0.6,1.6,10),matCrystal); c.position.set(x,y+1.2,z); scene.add(c); crystals.push(c); }
+  addCrystal(14,5,-12); addCrystal(26,7,-8);
 
-function setupMaze(){
-  hud.textContent="Maze Explorer: find your way!";
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(40,40),new THREE.MeshStandardMaterial({color:0x1b2250}));
-  floor.rotation.x=-Math.PI/2;scene.add(floor);
-  const wallMat=new THREE.MeshStandardMaterial({color:0x61e1ff});
-  for(let i=-20;i<=20;i+=5){
-    const wall=new THREE.Mesh(new THREE.BoxGeometry(1,3,5),wallMat);
-    wall.position.set(i,1.5,0);scene.add(wall);
+  // Player
+  const player={pos:new THREE.Vector3(0,1.1,0),vel:new THREE.Vector3(),yaw:0,radius:0.5,height:1.8,grounded:false,speed:6,jumpVel:7.5};
+  const playerMesh=new THREE.Mesh(new THREE.CapsuleGeometry(player.radius,player.height-2*player.radius,8,16),matPlayer);
+  scene.add(playerMesh);
+
+  // Camera follow
+  const camOffset=new THREE.Vector3(0,2.5,6.5);
+  function updateCamera(){
+    const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
+    const offset=new THREE.Vector3(camOffset.x*cos+camOffset.z*sin,camOffset.y,-camOffset.x*sin+camOffset.z*cos);
+    camera.position.copy(player.pos).add(offset);
+    camera.lookAt(player.pos);
   }
-}
 
-function setupShooter(){
-  hud.textContent="Shooter Demo: shoot targets!";
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(40,40),new THREE.MeshStandardMaterial({color:0x1b2250}));
-  floor.rotation.x=-Math.PI/2;scene.add(floor);
-  const targetMat=new THREE.MeshStandardMaterial({color:0xff0000});
-  for(let i=0;i<5;i++){
-    const target=new THREE.Mesh(new THREE.BoxGeometry(1,1,0.2),targetMat);
-    target.position.set(-10+i*5,1.5,-10);scene.add(target);
+  // Joysticks
+  let moveStick={x:0,y:0}, lookStick={x:0,y:0};
+  function setupStick(el,onMove){
+    const knob=el.querySelector(".knob"); let active=false;
+    el.addEventListener("touchstart",()=>{active=true;},{passive:true});
+    el.addEventListener("touchmove",e=>{
+      if(!active)return; const rect=el.getBoundingClientRect(); const t=e.touches[0];
+      const dx=t.clientX-(rect.left+rect.width/2); const dy=t.clientY-(rect.top+rect.height/2);
+      const r=50,mag=Math.hypot(dx,dy),cl=mag>r?r/mag:1; const nx=dx*cl,ny=dy*cl;
+      knob.style.transform=`translate(${nx}px,${ny}px) translate(-50%,-50%)`; onMove(nx/r,ny/r); e.preventDefault();
+    },{passive:false});
+    function reset(){active=false;knob.style.transform="translate(-50%,-50%)";onMove(0,0);}
+    el.addEventListener("touchend",reset,{passive:true});
+    el.addEventListener("touchcancel",reset,{passive:true});
   }
-}
+  setupStick(document.getElementById("stickLeft"),(x,y)=>{moveStick.x=x;moveStick.y=y;});
+  setupStick(document.getElementById("stickRight"),(x,y)=>{lookStick.x=x;lookStick.y=y;});
 
-function loop(){
-  loopId=requestAnimationFrame(loop);
-  const dt=0.016;
-  let forward=moveStick.y; let strafe=moveStick.x;
-  const len=Math.hypot(forward,strafe); if(len>1){forward/=len;strafe/=len;}
-  const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
-  player.pos.x+=(strafe*cos+forward*sin)*player.speed*dt;
-  player.pos.z+=(strafe*-sin+forward*cos)*player.speed*dt;
-  player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt;
-  if(player.pos.y<=2){player.pos.y=2;player.vel.y=0;player.grounded=true;}
-  player.yaw-=lookStick.x*2.5*dt;
-  player.pitch-=lookStick.y*2.0*dt;
-  const maxPitch=Math.PI/2-0.05,minPitch=-Math.PI/2+0.05;
-  player.pitch=Math.max(min
+  // Jump button
+  document.getElementById("btnJump").addEventListener("click",()=>{if(player.grounded){player.vel.y=player.jumpVel;player.grounded=false;}});
+
+  // Collision helper
+  function getAABB(mesh){mesh.geometry.computeBoundingBox();const bb=mesh.geometry.boundingBox.clone();bb.min.add(mesh.position);bb.max.add(mesh.position);return bb;}
+  function resolveCollisions(pos,vel,radius,height,aabb){
+    if(pos.x>=aabb.min.x-radius&&pos.x<=aabb.max.x+radius&&pos.y>=aabb.min.y-radius&&pos.y<=aabb.max.y+radius&&pos.z>=aabb.min.z-radius&&pos.z<=aabb.max.z+radius){
+      if(pos.y>=(aabb.max.y)){pos.y=aabb.max.y;vel.y=Math.max(0,vel.y);player.grounded=true;}
+    }
+  }
+
+  // Score
+  let score=0; const scoreEl=document.getElementById("score");
+
+  // Loop
+  function loop(){
+    requestAnimationFrame(loop);
+    const dt=0.016;
+    // Movement
+    let fwd=moveStick.y; let str=moveStick.x;
+    const len=Math.hypot(fwd,str); if(len>1){fwd/=len;str/=len;}
+    const cos=Math.cos(player.yaw),sin=Math.sin(player.yaw);
+    player.pos.x+=(str*cos+fwd*sin)*player.speed*dt;
+    player.pos.z+=(str*-sin+fwd*cos)*player.speed*dt;
+    // Gravity
+    player.vel.y-=9.8*dt; player.pos.y+=player.vel.y*dt; player.grounded=false;
+    // Collisions
+    const colliders=platforms.concat([ground]);
+    for(const m of colliders){resolveCollisions(player.pos,player.vel,player.radius,player.height,getAABB(m));}
+    if(player.pos.y<-20){player.pos.set(0,1.1,0);player.vel.set(0,0,0);}
+    // Update mesh
+    playerMesh.position.copy(player.pos);
+    // Camera rotation from right stick
+    player.yaw-=lookStick.x*2.5*dt;
+    updateCamera();
+    // Collect crystals
+    for(let i=crystals.length-1;i>=0;i--){if(player.pos.distanceTo(crystals
