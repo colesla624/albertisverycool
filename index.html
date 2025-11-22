@@ -2,194 +2,171 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mobile Platformer</title>
+<title>3D Platformer Mobile</title>
 <style>
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #87CEEB;
-        font-family: Arial, sans-serif;
-        touch-action: none;
-    }
-
-    canvas {
-        display: block;
-        background: #87CEEB;
-    }
-
-    /* Mobile controls */
+    body { margin: 0; overflow: hidden; background: #000; }
     #controls {
         position: fixed;
         bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
+        width: 100%;
         display: flex;
+        justify-content: center;
         gap: 20px;
         z-index: 10;
+        user-select: none;
     }
     .btn {
         width: 70px;
         height: 70px;
-        background: rgba(255,255,255,0.6);
+        background: rgba(255,255,255,0.5);
         border-radius: 50%;
         display: flex;
-        align-items: center;
         justify-content: center;
+        align-items: center;
         font-size: 30px;
-        user-select: none;
     }
 </style>
 </head>
+
 <body>
 
-<canvas id="game"></canvas>
-
-<!-- Mobile Buttons -->
+<!-- Mobile Controls -->
 <div id="controls">
     <div class="btn" id="left">⟵</div>
     <div class="btn" id="jump">⬆</div>
     <div class="btn" id="right">⟶</div>
 </div>
 
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+/* ---------- SETUP ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0, 5, 12);
 
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-resize();
-window.addEventListener("resize", resize);
+const renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
 
-// Game objects
-const player = {
-    x: 50,
-    y: 0,
-    w: 40,
-    h: 40,
-    velX: 0,
-    velY: 0,
-    speed: 4,
-    jumping: false
-};
+/* ---------- LIGHT ---------- */
+const light = new THREE.DirectionalLight(0xffffff, 1.3);
+light.position.set(5, 10, 5);
+scene.add(light);
 
-const gravity = 0.5;
+/* ---------- PLAYER ---------- */
+const playerGeo = new THREE.BoxGeometry(1,1,1);
+const playerMat = new THREE.MeshStandardMaterial({color: "red"});
+const player = new THREE.Mesh(playerGeo, playerMat);
+player.position.y = 1;
+scene.add(player);
 
-// Platforms
-const platforms = [
-    {x: 0, y: canvas.height - 40, w: canvas.width, h: 40},
-    {x: 120, y: canvas.height - 140, w: 150, h: 20},
-    {x: 300, y: canvas.height - 260, w: 180, h: 20},
-    {x: 550, y: canvas.height - 200, w: 160, h: 20},
-];
+let velY = 0;
+let onGround = false;
 
-// Goal flag
-const goal = {
-    x: 750,
-    y: canvas.height - 300,
-    w: 40,
-    h: 80
-};
+/* ---------- GROUND ---------- */
+const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(30,1,30),
+    new THREE.MeshStandardMaterial({color: "green"})
+);
+ground.position.y = -0.5;
+scene.add(ground);
 
-// Input
-let leftPressed = false;
-let rightPressed = false;
-let jumpPressed = false;
+/* ---------- PLATFORM (EASY) ---------- */
+const platform = new THREE.Mesh(
+    new THREE.BoxGeometry(5,0.5,5),
+    new THREE.MeshStandardMaterial({color: "lightblue"})
+);
+platform.position.set(0, 2, -5);
+scene.add(platform);
 
-document.addEventListener("keydown", e => {
-    if (e.key === "ArrowLeft") leftPressed = true;
-    if (e.key === "ArrowRight") rightPressed = true;
-    if (e.key === "ArrowUp") jumpPressed = true;
+/* ---------- GOAL ---------- */
+const goal = new THREE.Mesh(
+    new THREE.BoxGeometry(1,2,1),
+    new THREE.MeshStandardMaterial({color: "yellow"})
+);
+goal.position.set(0, 3, -10);
+scene.add(goal);
+
+/* ---------- INPUT ---------- */
+let left = false, right = false, jump = false;
+
+// Keyboard
+addEventListener("keydown", e => {
+    if (e.key === "ArrowLeft") left = true;
+    if (e.key === "ArrowRight") right = true;
+    if (e.key === "ArrowUp") jump = true;
 });
-document.addEventListener("keyup", e => {
-    if (e.key === "ArrowLeft") leftPressed = false;
-    if (e.key === "ArrowRight") rightPressed = false;
-    if (e.key === "ArrowUp") jumpPressed = false;
+addEventListener("keyup", e => {
+    if (e.key === "ArrowLeft") left = false;
+    if (e.key === "ArrowRight") right = false;
+    if (e.key === "ArrowUp") jump = false;
 });
 
-// Mobile buttons
-function bindButton(id, variable) {
+// Mobile
+function bind(id, variable) {
     const btn = document.getElementById(id);
     btn.addEventListener("touchstart", () => window[variable] = true);
     btn.addEventListener("touchend", () => window[variable] = false);
 }
-bindButton("left", "leftPressed");
-bindButton("right", "rightPressed");
-bindButton("jump", "jumpPressed");
+bind("left", "left");
+bind("right", "right");
+bind("jump", "jump");
 
-function update() {
-    // Movement
-    if (leftPressed) player.velX = -player.speed;
-    else if (rightPressed) player.velX = player.speed;
-    else player.velX = 0;
+/* ---------- GAME LOOP ---------- */
+function animate() {
+    requestAnimationFrame(animate);
 
-    // Jump
-    if (jumpPressed && !player.jumping) {
-        player.velY = -10;
-        player.jumping = true;
+    // horizontal movement
+    if (left) player.position.x -= 0.1;
+    if (right) player.position.x += 0.1;
+
+    // jumping
+    if (jump && onGround) {
+        velY = 0.28;
+        onGround = false;
     }
 
-    // Gravity
-    player.velY += gravity;
+    // apply gravity
+    velY -= 0.01;
+    player.position.y += velY;
 
-    // Apply movement
-    player.x += player.velX;
-    player.y += player.velY;
-
-    // Collision with platforms
-    for (let p of platforms) {
-        if (
-            player.x < p.x + p.w &&
-            player.x + player.w > p.x &&
-            player.y + player.h > p.y &&
-            player.y + player.h < p.y + p.h + player.velY
-        ) {
-            player.y = p.y - player.h;
-            player.velY = 0;
-            player.jumping = false;
-        }
+    // ground collision
+    if (player.position.y <= 1) {
+        player.position.y = 1;
+        velY = 0;
+        onGround = true;
     }
 
-    // Goal collision
-    if (
-        player.x < goal.x + goal.w &&
-        player.x + player.w > goal.x &&
-        player.y < goal.y + goal.h &&
-        player.y + player.h > goal.y
-    ) {
-        alert("🎉 You win!");
-        player.x = 50;
-        player.y = 0;
+    // platform collision (simple AABB)
+    if (player.position.x > platform.position.x - 2.5 &&
+        player.position.x < platform.position.x + 2.5 &&
+        player.position.z > platform.position.z - 2.5 &&
+        player.position.z < platform.position.z + 2.5 &&
+        player.position.y <= 2.5 && player.position.y > 1) {
+
+        player.position.y = 2.5;
+        velY = 0;
+        onGround = true;
     }
 
-    // Boundaries
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+    // Check for winning
+    if (player.position.distanceTo(goal.position) < 1.5) {
+        alert("🎉 YOU WIN!");
+        player.position.set(0,1,0);
+    }
 
-    draw();
-    requestAnimationFrame(update);
+    renderer.render(scene, camera);
 }
+animate();
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw player
-    ctx.fillStyle = "red";
-    ctx.fillRect(player.x, player.y, player.w, player.h);
-
-    // Draw platforms
-    ctx.fillStyle = "green";
-    for (let p of platforms) {
-        ctx.fillRect(p.x, p.y, p.w, p.h);
-    }
-
-    // Draw goal flag
-    ctx.fillStyle = "yellow";
-    ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
-}
-
-update();
+// Resize support
+addEventListener("resize", () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
 </script>
 
 </body>
