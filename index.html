@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game with Drag Rotation, Collisions, Build</title>
+  <title>Minecraft-like Game — Capsule, Solid Collisions, Drag Look, Build</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -22,7 +22,7 @@
     }
     #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
 
-    /* Right-side controls: always visible */
+    /* Right-side cluster: always on screen */
     #uiRight {
       position: absolute;
       right: 14px;
@@ -81,19 +81,17 @@
 <body>
   <div id="crosshair"></div>
   <button id="povBtn" class="btn">POV: Third</button>
-
   <div id="uiRight">
     <button id="placeBtn" class="btn">Place</button>
     <button id="deleteBtn" class="btn">Delete</button>
   </div>
   <button id="jumpBtn" class="btn">Jump</button>
-
   <div id="joystick"><div id="stick"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
     // ------------------------------------------------------------
-    // Utilities: seeded 2D noise
+    // Utilities: seeded 2D value noise for terrain
     // ------------------------------------------------------------
     function mulberry32(seed) {
       return function() {
@@ -184,6 +182,9 @@
       mesh.geometry.dispose();
       voxels.delete(k);
     }
+    function isSolid(x, y, z) {
+      return voxels.has(key(x, y, z));
+    }
 
     // Terrain generation
     const noise = makeNoise2D(1337);
@@ -201,30 +202,30 @@
     }
 
     // ------------------------------------------------------------
-    // Player
+    // Player capsule
     // ------------------------------------------------------------
-    const playerGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
-    const playerMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
-    const player = new THREE.Mesh(playerGeo, playerMat);
+    const capsuleRadius = 0.4;
+    const capsuleMid = 1.0;        // cylinder part height
+    const capsuleHeight = capsuleMid + 2*capsuleRadius; // total height
+    const capsuleGeo = new THREE.CapsuleGeometry(capsuleRadius, capsuleMid, 8, 16);
+    const capsuleMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
+    const player = new THREE.Mesh(capsuleGeo, capsuleMat);
     player.position.set(WORLD_SIZE/2 + 0.5, MAX_HEIGHT + 8, WORLD_SIZE/2 + 0.5);
     scene.add(player);
 
-    const PSX = 0.8, PSY = 1.6, PSZ = 0.8; // player AABB size
-    const HALF_X = PSX/2, HALF_Y = PSY/2, HALF_Z = PSZ/2;
-
     const playerVel = new THREE.Vector3(0, 0, 0);
     const GRAVITY = 20;
-    const MOVE_SPEED = 4.5;
-    const JUMP_SPEED = 8.0;
+    const MOVE_SPEED = 4.8;
+    const JUMP_SPEED = 8.8;
     let onGround = false;
     let pov = "third";
 
-    // Facing angles via drag
-    let yaw = 0;    // rotation around Y
-    let pitch = 0;  // rotation around X (camera only, clamped)
+    // Facing (drag yaw/pitch)
+    let yaw = 0;
+    let pitch = 0; // also used for third-person camera tilt
 
     // ------------------------------------------------------------
-    // Joystick (inverted forward/backward: up = backward, down = forward)
+    // Joystick (inverted forward/backward)
     // ------------------------------------------------------------
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
@@ -260,7 +261,7 @@
     });
 
     // ------------------------------------------------------------
-    // Finger drag rotation (exclude joystick area)
+    // Drag rotation (exclude joystick area)
     // ------------------------------------------------------------
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
@@ -276,9 +277,9 @@
       const ty = e.touches[0].clientY;
       const dx = tx - lastX;
       const dy = ty - lastY;
-      yaw -= dx * 0.005;               // horizontal drag rotates yaw
-      pitch -= dy * 0.005;             // vertical drag rotates pitch
-      pitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch)); // clamp pitch
+      yaw -= dx * 0.005;
+      pitch -= dy * 0.005;
+      pitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch));
       lastX = tx; lastY = ty;
     }, { passive: true });
 
@@ -331,117 +332,121 @@
     deleteBtn.addEventListener("click", deleteBlockAtAim);
 
     // ------------------------------------------------------------
-    // Collision resolution (voxel AABB)
+    // Collision helpers (capsule vs voxels, no bounce)
     // ------------------------------------------------------------
-    function aabbIntersect(ax, ay, az, asx, asy, asz, bx, by, bz, bsx, bsy, bsz) {
-      return Math.abs(ax - bx) * 2 < (asx + bsx) &&
-             Math.abs(ay - by) * 2 < (asy + bsy) &&
-             Math.abs(az - bz) * 2 < (asz + bsz);
+    // We resolve movement axis-by-axis (Y then X then Z), and snap to block tops when falling.
+    function getFacingVectors() {
+      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+      const forward = new THREE.Vector3(-sinY, 0, -cosY).normalize();
+      const right   = new THREE.Vector3( cosY, 0, -sinY).normalize();
+      return { forward, right };
     }
 
-    function resolveCollisions() {
+    function groundSnapAndDetect(dt) {
+      // Predict next Y
+      let nextY = player.position.y + playerVel.y * dt;
+
+      // Bottom of capsule center
+      const footCenterY = nextY - capsuleHeight / 2;
       const px = player.position.x;
-      const py = player.position.y;
       const pz = player.position.z;
 
-      onGround = false;
+      // Check the blocks directly under the capsule within radius
+      const minX = Math.floor(px - capsuleRadius);
+      const maxX = Math.floor(px + capsuleRadius);
+      const minZ = Math.floor(pz - capsuleRadius);
+      const maxZ = Math.floor(pz + capsuleRadius);
 
-      const minX = Math.floor(px - 1.5);
-      const maxX = Math.floor(px + 1.5);
-      const minY = Math.floor(py - 1.2);
-      const maxY = Math.floor(py + 1.2);
-      const minZ = Math.floor(pz - 1.5);
-      const maxZ = Math.floor(pz + 1.5);
+      let highestGround = -Infinity;
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          const gy = Math.floor(footCenterY - 0.05); // slightly below foot
+          if (isSolid(x, gy, z)) {
+            highestGround = Math.max(highestGround, gy + 1); // block top surface
+          }
+        }
+      }
+
+      // Snap onto ground if falling into it
+      if (highestGround !== -Infinity && playerVel.y <= 0) {
+        const desiredFootY = highestGround + capsuleRadius; // foot center sits capsuleRadius above block top
+        const desiredPlayerY = desiredFootY + capsuleHeight / 2;
+        if (nextY < desiredPlayerY) {
+          player.position.y = desiredPlayerY;
+          playerVel.y = 0;
+          onGround = true;
+          return;
+        }
+      }
+
+      // Otherwise, apply vertical motion
+      player.position.y = nextY;
+      onGround = false;
+    }
+
+    function horizontalResolve(axis) {
+      // Axis: 'x' or 'z'. Move along axis, push out from blocks if overlapping.
+      const radius = capsuleRadius;
+      const halfH = capsuleHeight / 2;
+      const centerY = player.position.y;
+
+      // After moving, check nearby blocks and separate
+      const px = player.position.x;
+      const pz = player.position.z;
+      const minX = Math.floor(px - radius - 1);
+      const maxX = Math.floor(px + radius + 1);
+      const minY = Math.floor(centerY - halfH);
+      const maxY = Math.floor(centerY + halfH);
+      const minZ = Math.floor(pz - radius - 1);
+      const maxZ = Math.floor(pz + radius + 1);
 
       for (let x = minX; x <= maxX; x++) {
         for (let y = minY; y <= maxY; y++) {
           for (let z = minZ; z <= maxZ; z++) {
-            const mesh = voxels.get(key(x, y, z));
-            if (!mesh) continue;
-            const bx = mesh.position.x;
-            const by = mesh.position.y;
-            const bz = mesh.position.z;
-            const BS = BLOCK_SIZE;
+            if (!isSolid(x, y, z)) continue;
+            // Block center and AABB
+            const bx = x + 0.5, by = y + 0.5, bz = z + 0.5;
+            const dx = px - bx;
+            const dz = pz - bz;
+            const dy = Math.max(0, Math.abs(centerY - by) - 0.5); // vertical separation
+            const horizDist = Math.hypot(dx, dz);
 
-            if (aabbIntersect(px, py, pz, PSX, PSY, PSZ, bx, by, bz, BS, BS, BS)) {
-              const penX = (HALF_X + BS/2) - Math.abs(px - bx);
-              const penY = (HALF_Y + BS/2) - Math.abs(py - by);
-              const penZ = (HALF_Z + BS/2) - Math.abs(pz - bz);
-
-              if (penX < penY && penX < penZ) {
-                const sign = (px < bx) ? -1 : 1;
-                player.position.x += sign * penX;
-                playerVel.x = 0;
-              } else if (penY < penX && penY < penZ) {
-                const sign = (py < by) ? -1 : 1;
-                player.position.y += sign * penY;
-                if (sign < 0) onGround = true;   // landed on block
-                if (playerVel.y < 0 && sign > 0) playerVel.y = 0; // stop sinking
-                if (playerVel.y > 0 && sign < 0) playerVel.y = 0; // ceiling bump
-              } else {
-                const sign = (pz < bz) ? -1 : 1;
-                player.position.z += sign * penZ;
-                playerVel.z = 0;
+            // If vertically overlapping the block slab and horizontally too close, separate horizontally
+            if (dy < halfH && horizDist < radius + 0.5) {
+              const overlap = (radius + 0.5) - horizDist;
+              if (overlap > 0) {
+                const nx = dx / (horizDist || 1e-6);
+                const nz = dz / (horizDist || 1e-6);
+                if (axis === 'x') player.position.x += nx * overlap;
+                else              player.position.z += nz * overlap;
               }
             }
           }
         }
       }
-
-      // Bounds safety
-      player.position.x = Math.max(HALF_X, Math.min(WORLD_SIZE - HALF_X, player.position.x));
-      player.position.z = Math.max(HALF_Z, Math.min(WORLD_SIZE - HALF_Z, player.position.z));
-      if (player.position.y < HALF_Y) {
-        player.position.y = HALF_Y;
-        playerVel.y = 0;
-        onGround = true;
-      }
     }
 
     // ------------------------------------------------------------
-    // Camera and facing
+    // Camera update (first-person and third-person with pitch tilt)
     // ------------------------------------------------------------
-    function getFacingVectors() {
-      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
-      const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
-
-      // Forward vector based on yaw/pitch (y pitch affects look, not movement vertical)
-      const forward = new THREE.Vector3(
-        -sinY * cosP,
-        0,                      // keep movement on XZ plane
-        -cosY * cosP
-      );
-      forward.normalize();
-
-      const right = new THREE.Vector3(cosY, 0, -sinY).normalize();
-      return { forward, right };
-    }
-
     function updateCamera() {
       const { forward, right } = getFacingVectors();
       const target = player.position.clone();
 
       if (pov === "first") {
-        const eye = target.clone().add(new THREE.Vector3(0, 0.6, 0));
+        const eye = target.clone().add(new THREE.Vector3(0, capsuleHeight * 0.35, 0));
+        const lookDir = new THREE.Vector3(forward.x, Math.sin(pitch), forward.z).normalize();
         camera.position.copy(eye);
-
-        // Look dir uses pitch for aiming
-        const lookDir = new THREE.Vector3(
-          forward.x,
-          Math.sin(pitch),      // vertical aim
-          forward.z
-        ).normalize();
-
-        const lookTarget = eye.clone().add(lookDir);
-        camera.lookAt(lookTarget);
+        camera.lookAt(eye.clone().add(lookDir));
       } else {
-        // Third-person: offset back and up relative to facing
+        // Third-person: orbit back/above with pitch tilt
         const back = forward.clone().multiplyScalar(-1);
+        const upTilt = Math.sin(pitch);
         const camPos = target.clone()
-          .add(new THREE.Vector3(0, 3.5, 0))
-          .add(back.multiplyScalar(8));
+          .add(new THREE.Vector3(0, 2.5 + 2.0 * (upTilt > 0 ? upTilt : 0), 0)) // tilt up adds height
+          .add(back.multiplyScalar(8 - 2.0 * (upTilt < 0 ? -upTilt : 0)));     // tilt down moves closer
         camera.position.copy(camPos);
-        camera.lookAt(target.clone().add(new THREE.Vector3(0, 1.0, 0)));
+        camera.lookAt(target.clone().add(new THREE.Vector3(0, 1.4, 0)));
       }
     }
 
@@ -458,28 +463,36 @@
       // Gravity
       playerVel.y -= GRAVITY * dt;
 
-      // Movement (inverted forward/backward applied already in joyVec)
+      // Movement (inverted Y already applied in joyVec)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(right, joyVec.x)
         .addScaledVector(forward, joyVec.y);
-
       if (moveDir.lengthSq() > 0) moveDir.normalize();
 
-      playerVel.x = moveDir.x * MOVE_SPEED;
-      playerVel.z = moveDir.z * MOVE_SPEED;
+      const vx = moveDir.x * MOVE_SPEED;
+      const vz = moveDir.z * MOVE_SPEED;
 
-      // Integrate velocity
-      player.position.x += playerVel.x * dt;
-      player.position.y += playerVel.y * dt;
-      player.position.z += playerVel.z * dt;
+      // 1) Vertical: snap to ground if falling into it (prevents bounce)
+      groundSnapAndDetect(dt);
 
-      // Collisions
-      resolveCollisions();
+      // 2) Horizontal X then Z with separation (prevents clipping)
+      player.position.x += vx * dt;
+      horizontalResolve('x');
 
-      // Camera
+      player.position.z += vz * dt;
+      horizontalResolve('z');
+
+      // World bounds
+      player.position.x = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.x));
+      player.position.z = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.z));
+      if (player.position.y < capsuleHeight / 2) {
+        player.position.y = capsuleHeight / 2;
+        playerVel.y = 0;
+        onGround = true;
+      }
+
       updateCamera();
-
       renderer.render(scene, camera);
     }
     animate();
@@ -514,7 +527,6 @@
       if (len > 0) { x /= len; y /= len; }
       joyVec.x = x; joyVec.y = y;
 
-      // Visual stick follows desktop input (invert display back to raw)
       stick.style.left = (41 + x * JOY_RADIUS) + "px";
       stick.style.top  = (41 + (-y) * JOY_RADIUS) + "px";
       requestAnimationFrame(desktopControlsToJoystick);
