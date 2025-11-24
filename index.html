@@ -3,37 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>MiniCraft — Mobile-friendly Voxel Demo (Capsule Collider + Lower Sensitivity)</title>
+  <title>MiniCraft — Movement Aligned to Look Direction</title>
   <style>
-    html,body{height:100%;margin:0;background:#07131a;color:#e6f1f6;overflow:hidden;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    html,body{height:100%;margin:0;background:#07131a;color:#e6f6ff;overflow:hidden;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
     canvas{display:block;width:100%;height:100%}
-    #ui{position:fixed;left:12px;top:12px;z-index:60;pointer-events:none}
-    #hotbar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;display:flex;gap:8px;z-index:60;pointer-events:auto}
-    .slot{width:56px;height:56px;border-radius:8px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-weight:700;user-select:none}
-    #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;line-height:18px;text-align:center;font-weight:800;pointer-events:none;z-index:50;opacity:0.95}
-    #controls{position:fixed;left:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:55;pointer-events:auto}
-    .joystick{width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.03);touch-action:none;display:flex;align-items:center;justify-content:center;color:#9fb2c8;user-select:none}
-    .btn{width:64px;height:64px;border-radius:12px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-weight:800;color:#eaf6ff;user-select:none;border:0}
-    #right-controls{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:55;pointer-events:auto}
-    .action-row{display:flex;gap:8px}
-    #tips{position:fixed;right:12px;top:12px;color:#9fb2c8;font-size:13px;opacity:0.95;z-index:60;pointer-events:none}
-    #fps{font-size:12px;opacity:.85}
-    /* visual joystick thumb */
-    .thumb{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;pointer-events:none}
-    @media (max-width:800px){ #crosshair{opacity:0.6} }
-    #thirdBtn{position:fixed;left:12px;top:12px;z-index:80;pointer-events:auto;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.06);color:#eaf6ff;font-weight:800;border:0}
+    #thirdBtn{position:fixed;left:12px;top:12px;z-index:80;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.06);color:#eaf6ff;font-weight:800;border:0}
     #thirdBtn.active{background:#1e88e5;color:#fff}
+    .joystick{width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.03);touch-action:none;display:flex;align-items:center;justify-content:center;color:#9fb2c8}
+    .thumb{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;pointer-events:none}
+    .btn{width:64px;height:64px;border-radius:12px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-weight:800;color:#eaf6ff;border:0}
+    .slot{width:56px;height:56px;border-radius:8px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-weight:700}
+    #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;font-weight:900;z-index:50}
+    #controls{position:fixed;left:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:60}
+    #right-controls{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:60}
+    #hotbar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;display:flex;gap:8px;z-index:60}
+    #fps{position:fixed;left:12px;top:52px;font-size:12px;opacity:.85}
   </style>
 </head>
 <body>
 <button id="thirdBtn" title="Toggle 3rd / 1st">3rd</button>
 
 <canvas id="c"></canvas>
-<div id="ui"><div id="fps"></div></div>
+<div id="fps"></div>
 <div id="crosshair">+</div>
-<div id="tips">Left joystick = move • Right joystick = turn/look • Buttons: p = place, d = delete • Jump: ▲ or Space</div>
 
-<!-- left joystick (movement) -->
 <div id="controls">
   <div id="joy" class="joystick"><div class="thumb" id="joyThumb">◉</div></div>
   <div style="display:flex;gap:8px">
@@ -42,10 +35,9 @@
   </div>
 </div>
 
-<!-- right joystick (turn) + action buttons -->
 <div id="right-controls">
-  <div id="lookJoy" class="joystick" style="width:110px;height:110px;"><div class="thumb" id="lookThumb">◉</div></div>
-  <div class="action-row">
+  <div id="lookJoy" class="joystick" style="width:110px;height:110px"><div class="thumb" id="lookThumb">◉</div></div>
+  <div style="display:flex;gap:8px;margin-top:6px">
     <div id="place" class="btn">p</div>
     <div id="delete" class="btn">d</div>
   </div>
@@ -53,20 +45,18 @@
 
 <div id="hotbar"></div>
 
-<!-- Three.js -->
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
 /*
-  Changes in this file:
-  - Replaced AABB player collider with a capsule collider (player.radius + segment).
-  - Collision resolution uses sampling along the capsule segment to find closest points to nearby voxel AABBs,
-    then resolves penetration by translating the player.
-  - Lowered turning sensitivity (lookSensitivity reduced).
-  - Place/Delete raycasting uses the camera center (crosshair) as requested.
-  - Full single-file demo (save/load still in localStorage).
+  Full file:
+  - Movement is now aligned to where the player is looking (camera forward).
+    Push joystick up => move forward in camera's forward direction (horizontal only).
+  - Capsule collider visible in blue when in 3rd-person.
+  - Lowered turning sensitivity retained.
+  - Crosshair-based place/delete.
+  - Mobile joysticks and buttons kept.
 */
 
-// Setup renderer and scene
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -76,62 +66,58 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x07131a, 0.01);
 
 const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 1000);
-
-// lights
-const hemi = new THREE.HemisphereLight(0xfff7e6, 0x081827, 0.9); scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(4,8,2); scene.add(dir);
-
-// raycaster for crosshair placement/deletion
 const raycaster = new THREE.Raycaster();
 
-// world & blocks
-const WORLD = { sizeX: 32, sizeY: 18, sizeZ: 32, seaLevel: 6 };
+// Lights
+scene.add(new THREE.HemisphereLight(0xfff7e6, 0x081827, 0.9));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(4,8,2);
+scene.add(dirLight);
+
+// World
+const WORLD = { sizeX:32, sizeY:18, sizeZ:32, seaLevel:6 };
 const total = WORLD.sizeX * WORLD.sizeY * WORLD.sizeZ;
-const blocks = new Uint8Array(total); // 0=air,1=grass,2=stone,3=wood
+const blocks = new Uint8Array(total);
 function idx(x,y,z){ return x + WORLD.sizeX * (y + WORLD.sizeY * z); }
+function noise2(x,z){ return (Math.sin(x*12.9898 + z*78.233) * 43758.5453 % 1 + Math.cos(z*6.2831 + x*3.1415)*0.5)*0.5; }
 
-// simple deterministic pseudo-noise
-function noise2(x,z){
-  return (Math.sin(x*12.9898 + z*78.233) * 43758.5453 % 1 + Math.cos(z*6.2831 + x*3.1415) * 0.5) * 0.5;
-}
-
-// terrain generation
+// generate terrain
 for(let z=0; z<WORLD.sizeZ; z++){
   for(let x=0; x<WORLD.sizeX; x++){
-    const nx = (x/WORLD.sizeX) - 0.5;
-    const nz = (z/WORLD.sizeZ) - 0.5;
-    const h = Math.floor(WORLD.seaLevel + 3*(Math.sin(nx*3.4) + Math.cos(nz*2.7)) + 1.5*(noise2(nx*3, nz*3)));
-    for(let y=0; y<WORLD.sizeY; y++){
-      let t = 0;
-      if(y <= h) t = (y > h - 2) ? 1 : 2;
-      blocks[idx(x,y,z)] = t;
+    const nx = (x/WORLD.sizeX)-0.5;
+    const nz = (z/WORLD.sizeZ)-0.5;
+    const h = Math.floor(WORLD.seaLevel + 3*(Math.sin(nx*3.4)+Math.cos(nz*2.7)) + 1.5*(noise2(nx*3,nz*3)));
+    for(let y=0;y<WORLD.sizeY;y++){
+      let t=0;
+      if(y<=h) t = (y > h-2) ? 1 : 2;
+      blocks[idx(x,y,z)]=t;
     }
   }
 }
-function plantTree(cx, cz){ const groundY = Math.max(5, WORLD.seaLevel + 1); for(let y=groundY+1;y<groundY+5;y++){ if(y < WORLD.sizeY) blocks[idx(cx,y,cz)] = 3;} }
+function plantTree(cx,cz){ const gy = Math.max(5,WORLD.seaLevel+1); for(let y=gy+1;y<gy+5;y++){ if(y < WORLD.sizeY) blocks[idx(cx,y,cz)] = 3; } }
 plantTree(16,14); plantTree(22,6);
 
-// instanced rendering
+// Instanced rendering for blocks
 const matColors = {1:0x5fb86b, 2:0x8f8f8f, 3:0x8b5a2b};
 const instanced = {};
 function rebuildMeshes(){
   for(const k in instanced) if(instanced[k]){ scene.remove(instanced[k]); instanced[k].geometry.dispose(); instanced[k].material.dispose(); }
-  const mtx = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  const p = new THREE.Vector3();
   for(const type of [1,2,3]){
     let count = 0; for(let i=0;i<total;i++) if(blocks[i]===type) count++;
     if(count===0){ instanced[type]=null; continue; }
     const geo = new THREE.BoxGeometry(1,1,1);
-    const mat = new THREE.MeshStandardMaterial({color: matColors[type], flatShading:true});
+    const mat = new THREE.MeshStandardMaterial({color:matColors[type], flatShading:true});
     const mesh = new THREE.InstancedMesh(geo, mat, count);
     let id=0;
     for(let z=0; z<WORLD.sizeZ; z++){
       for(let x=0; x<WORLD.sizeX; x++){
-        for(let y=0; y<WORLD.sizeY; y++){
+        for(let y=0;y<WORLD.sizeY;y++){
           if(blocks[idx(x,y,z)]!==type) continue;
-          pos.set(x - WORLD.sizeX/2, y, z - WORLD.sizeZ/2);
-          mtx.makeTranslation(pos.x, pos.y, pos.z);
-          mesh.setMatrixAt(id++, mtx);
+          p.set(x - WORLD.sizeX/2, y, z - WORLD.sizeZ/2);
+          m.makeTranslation(p.x, p.y, p.z);
+          mesh.setMatrixAt(id++, m);
         }
       }
     }
@@ -142,36 +128,30 @@ function rebuildMeshes(){
 }
 rebuildMeshes();
 
-// grid helper
 const grid = new THREE.GridHelper(60,60,0x24323b,0x152027);
 grid.rotation.x = Math.PI/2; grid.position.y = -0.5; scene.add(grid);
 
-// player — now with capsule collider parameters
+// Player (capsule)
 const player = {
-  pos: new THREE.Vector3(0,7,0),   // feet position (y at feet)
+  pos: new THREE.Vector3(0,7,0), // feet position
   vel: new THREE.Vector3(0,0,0),
   speed: 4.6,
   jumpSpeed: 7.5,
   height: 1.7,
-  radius: 0.35,   // capsule radius
+  radius: 0.35
 };
 let onGround = false;
 
-// world helpers
 function worldToGrid(v){ return { x: Math.floor(v.x + WORLD.sizeX/2 + 0.0001), y: Math.floor(v.y + 0.0001), z: Math.floor(v.z + WORLD.sizeZ/2 + 0.0001) }; }
 function inWorld(x,y,z){ return x>=0 && y>=0 && z>=0 && x < WORLD.sizeX && y < WORLD.sizeY && z < WORLD.sizeZ; }
 function getBlock(x,y,z){ if(!inWorld(x,y,z)) return 0; return blocks[idx(x,y,z)]; }
 function setBlock(x,y,z,t){ if(!inWorld(x,y,z)) return; blocks[idx(x,y,z)] = t; }
 
-// spawn player on top center
-function spawnPlayerOnTopAt(gridX, gridZ){
-  if(!inWorld(gridX,0,gridZ)) return false;
+function spawnPlayerOnTopAt(gx,gz){
+  if(!inWorld(gx,0,gz)) return false;
   for(let y=WORLD.sizeY-1;y>=0;y--){
-    if(getBlock(gridX,y,gridZ)!==0){
-      const wx = gridX - WORLD.sizeX/2 + 0.5;
-      const wz = gridZ - WORLD.sizeZ/2 + 0.5;
-      const wy = y + 1.0;
-      player.pos.set(wx, wy, wz);
+    if(getBlock(gx,y,gz)!==0){
+      player.pos.set(gx - WORLD.sizeX/2 + 0.5, y + 1.0, gz - WORLD.sizeZ/2 + 0.5);
       player.vel.set(0,0,0);
       return true;
     }
@@ -182,12 +162,11 @@ function spawnPlayerOnTopAt(gridX, gridZ){
 function spawnPlayerOnCenter(){ spawnPlayerOnTopAt(Math.floor(WORLD.sizeX/2), Math.floor(WORLD.sizeZ/2)); }
 spawnPlayerOnCenter();
 
-// crosshair-centered ray helpers
+// Crosshair ray
 function getCrosshairRay(){
-  raycaster.setFromCamera({x:0, y:0}, camera);
+  raycaster.setFromCamera({x:0,y:0}, camera);
   return { origin: raycaster.ray.origin.clone(), dir: raycaster.ray.direction.clone() };
 }
-
 function raycastBlocks(origin, dir, maxD=8, step=0.12){
   const p = origin.clone();
   for(let d=0; d<maxD; d+=step){
@@ -206,197 +185,176 @@ function raycastBlocks(origin, dir, maxD=8, step=0.12){
 function digBlock(){ const r = getCrosshairRay(); const hit = raycastBlocks(r.origin, r.dir); if(hit){ setBlock(hit.pos.x, hit.pos.y, hit.pos.z, 0); rebuildMeshes(); saveWorld(); } }
 function placeBlock(){ const r = getCrosshairRay(); const hit = raycastBlocks(r.origin, r.dir); if(hit){ const px = hit.pos.x + hit.side.x; const py = hit.pos.y + hit.side.y; const pz = hit.pos.z + hit.side.z; if(inWorld(px,py,pz) && getBlock(px,py,pz)===0){ setBlock(px,py,pz, selectedType); rebuildMeshes(); saveWorld(); } } }
 
-// gestures fallback
+// fallback gestures
 let lastTouchTime = 0;
-canvas.addEventListener('touchstart', (e)=>{
-  if(e.touches.length === 1){
-    const now = performance.now();
-    if(now - lastTouchTime < 300) digBlock();
-    lastTouchTime = now;
-  }
-  if(e.touches.length === 2) placeBlock();
-});
+canvas.addEventListener('touchstart', (e)=>{ if(e.touches.length===1){ const now = performance.now(); if(now - lastTouchTime < 300) digBlock(); lastTouchTime = now; } if(e.touches.length===2) placeBlock(); });
 
-// look state and third-person toggle
-const look = { pitch: 0, yaw: 0 };
+// Look & third-person
+const look = { pitch:0, yaw:0 };
 let thirdPerson = false;
 const thirdBtn = document.getElementById('thirdBtn');
 function updateThirdButton(){ thirdBtn.textContent = thirdPerson ? '1st' : '3rd'; thirdBtn.classList.toggle('active', thirdPerson); }
 thirdBtn.addEventListener('click', ()=>{ thirdPerson = !thirdPerson; updateThirdButton(); });
 updateThirdButton();
 
-// pointer lock and look
+// Pointer lock + mouse look
 let pointerLocked = false;
 canvas.addEventListener('click', ()=>{ if(!('ontouchstart' in window)) canvas.requestPointerLock?.(); });
 document.addEventListener('pointerlockchange', ()=>{ pointerLocked = (document.pointerLockElement === canvas); });
 window.addEventListener('mousemove', (e)=>{ if(pointerLocked){ look.yaw -= e.movementX * 0.0012; look.pitch -= e.movementY * 0.0012; look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch)); } });
 
-// mouse drag look if not pointer locked
-let mouseLookActive = false; let prevMouse = {x:0,y:0};
-canvas.addEventListener('mousedown', (e)=>{ if(e.button === 0 && !pointerLocked && !('ontouchstart' in window)){ mouseLookActive = true; prevMouse.x = e.clientX; prevMouse.y = e.clientY; }});
-window.addEventListener('mouseup', ()=>{ mouseLookActive = false; });
-window.addEventListener('mousemove', (e)=>{ if(mouseLookActive){ const dx = e.clientX - prevMouse.x; const dy = e.clientY - prevMouse.y; prevMouse.x = e.clientX; prevMouse.y = e.clientY; look.yaw -= dx * 0.0012; look.pitch -= dy * 0.0012; look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch)); }});
+// Mouse drag look
+let mouseLookActive=false, prevMouse={x:0,y:0};
+canvas.addEventListener('mousedown', (e)=>{ if(e.button===0 && !pointerLocked && !('ontouchstart' in window)){ mouseLookActive=true; prevMouse.x=e.clientX; prevMouse.y=e.clientY; }});
+window.addEventListener('mouseup', ()=>{ mouseLookActive=false; });
+window.addEventListener('mousemove', (e)=>{ if(mouseLookActive){ const dx=e.clientX-prevMouse.x, dy=e.clientY-prevMouse.y; prevMouse.x=e.clientX; prevMouse.y=e.clientY; look.yaw -= dx*0.0012; look.pitch -= dy*0.0012; look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch)); }});
 
-// avoid UI when touch-looking
-function isOverUI(x,y){
-  const el = document.elementFromPoint(x,y);
-  if(!el) return false;
-  return !!el.closest('#joy') || !!el.closest('#lookJoy') || !!el.closest('#jump') || !!el.closest('#place') || !!el.closest('#delete') || !!el.closest('#hotbar') || !!el.closest('#controls') || !!el.closest('#right-controls') || !!el.closest('#thirdBtn');
-}
+// Avoid UI touches for look
+function isOverUI(x,y){ const el = document.elementFromPoint(x,y); if(!el) return false; return !!el.closest('#joy')||!!el.closest('#lookJoy')||!!el.closest('#controls')||!!el.closest('#right-controls')||!!el.closest('#thirdBtn')||!!el.closest('#hotbar'); }
+let touchLook={active:false,id:null,px:0,py:0};
+canvas.addEventListener('pointerdown',(e)=>{ if(e.pointerType==='touch'||e.pointerType==='pen'){ if(isOverUI(e.clientX,e.clientY)) return; touchLook.active=true; touchLook.id=e.pointerId; touchLook.px=e.clientX; touchLook.py=e.clientY; canvas.setPointerCapture?.(e.pointerId); }});
+canvas.addEventListener('pointermove',(e)=>{ if(touchLook.active && e.pointerId===touchLook.id){ const dx=e.clientX-touchLook.px, dy=e.clientY-touchLook.py; touchLook.px=e.clientX; touchLook.py=e.clientY; look.yaw -= dx*0.0025; look.pitch -= dy*0.0025; look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch)); }});
+canvas.addEventListener('pointerup',(e)=>{ if(touchLook.active && e.pointerId===touchLook.id){ touchLook.active=false; touchLook.id=null; }});
+canvas.addEventListener('pointercancel',(e)=>{ if(touchLook.active && e.pointerId===touchLook.id){ touchLook.active=false; touchLook.id=null; }});
 
-let touchLook = {active:false, id:null, px:0, py:0};
-canvas.addEventListener('pointerdown', (e)=>{
-  if(e.pointerType === 'touch' || e.pointerType === 'pen'){
-    if(isOverUI(e.clientX, e.clientY)) return;
-    touchLook.active = true; touchLook.id = e.pointerId; touchLook.px = e.clientX; touchLook.py = e.clientY; canvas.setPointerCapture?.(e.pointerId);
-  }
-});
-canvas.addEventListener('pointermove', (e)=>{
-  if(touchLook.active && e.pointerId === touchLook.id){
-    const dx = e.clientX - touchLook.px; const dy = e.clientY - touchLook.py;
-    touchLook.px = e.clientX; touchLook.py = e.clientY;
-    look.yaw -= dx * 0.0025; // lowered sensitivity for touch look as well
-    look.pitch -= dy * 0.0025; look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch));
-  }
-});
-canvas.addEventListener('pointerup', (e)=>{ if(touchLook.active && e.pointerId === touchLook.id){ touchLook.active = false; touchLook.id = null; }});
-canvas.addEventListener('pointercancel', (e)=>{ if(touchLook.active && e.pointerId === touchLook.id){ touchLook.active = false; touchLook.id = null; }});
-
-// keyboard & jump
+// Keyboard & jump
 const keys = {};
-window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key === ' '){ e.preventDefault(); if(onGround) player.vel.y = player.jumpSpeed; }});
+window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(e.key===' '){ e.preventDefault(); if(onGround) player.vel.y = player.jumpSpeed; }});
 window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
 
-// LEFT joystick (movement) — vertical is natural (push up = forward)
+// Left joystick (movement) — vertical natural (up = forward)
 const joy = document.getElementById('joy'), joyThumb = document.getElementById('joyThumb');
 let joyState = {active:false,id:null,ox:0,oy:0,dx:0,dy:0};
-joy.addEventListener('pointerdown', (e)=>{ joy.setPointerCapture(e.pointerId); joyState.active=true; joyState.id=e.pointerId; joyState.ox=e.clientX; joyState.oy=e.clientY; joyState.dx=0; joyState.dy=0; updateJoyThumb();});
-joy.addEventListener('pointermove', (e)=>{ if(!joyState.active||e.pointerId!==joyState.id) return; joyState.dx = (e.clientX - joyState.ox)/48; joyState.dy = (joyState.oy - e.clientY)/48; joyState.dx = Math.max(-1,Math.min(1,joyState.dx)); joyState.dy = Math.max(-1,Math.min(1,joyState.dy)); updateJoyThumb();});
-joy.addEventListener('pointerup', (e)=>{ if(e.pointerId!==joyState.id) return; joy.releasePointerCapture?.(e.pointerId); joyState.active=false; joyState.id=null; joyState.dx=joyState.dy=0; updateJoyThumb();});
+joy.addEventListener('pointerdown',(e)=>{ joy.setPointerCapture(e.pointerId); joyState.active=true; joyState.id=e.pointerId; joyState.ox=e.clientX; joyState.oy=e.clientY; joyState.dx=0; joyState.dy=0; updateJoyThumb();});
+joy.addEventListener('pointermove',(e)=>{ if(!joyState.active||e.pointerId!==joyState.id) return; joyState.dx=(e.clientX - joyState.ox)/48; joyState.dy=(joyState.oy - e.clientY)/48; joyState.dx = Math.max(-1,Math.min(1,joyState.dx)); joyState.dy = Math.max(-1,Math.min(1,joyState.dy)); updateJoyThumb();});
+joy.addEventListener('pointerup',(e)=>{ if(e.pointerId!==joyState.id) return; joy.releasePointerCapture?.(e.pointerId); joyState.active=false; joyState.id=null; joyState.dx=joyState.dy=0; updateJoyThumb();});
 function updateJoyThumb(){ const tx = (joyState.dx * 40); const ty = (-joyState.dy * 40); joyThumb.style.transform = `translate(${tx}px, ${ty}px)`; }
 
-// RIGHT joystick (turn)
+// Right joystick (turn)
 const lookJoy = document.getElementById('lookJoy'), lookThumb = document.getElementById('lookThumb');
-let lookState = {active:false, id:null, ox:0, oy:0, dx:0, dy:0};
-lookJoy.addEventListener('pointerdown', (e)=>{ lookJoy.setPointerCapture(e.pointerId); lookState.active=true; lookState.id=e.pointerId; lookState.ox=e.clientX; lookState.oy=e.clientY; lookState.dx=0; lookState.dy=0; updateLookThumb();});
-lookJoy.addEventListener('pointermove', (e)=>{ if(!lookState.active||e.pointerId!==lookState.id) return; lookState.dx = (e.clientX - lookState.ox)/36; lookState.dy = (e.clientY - lookState.oy)/36; lookState.dx = Math.max(-1,Math.min(1,lookState.dx)); lookState.dy = Math.max(-1,Math.min(1,lookState.dy)); updateLookThumb();});
-lookJoy.addEventListener('pointerup', (e)=>{ if(e.pointerId!==lookState.id) return; lookJoy.releasePointerCapture?.(e.pointerId); lookState.active=false; lookState.id=null; lookState.dx=lookState.dy=0; updateLookThumb();});
-function updateLookThumb(){ const tx = (lookState.dx * 36); const ty = (lookState.dy * 36); lookThumb.style.transform = `translate(${tx}px, ${ty}px)`; }
+let lookState = {active:false,id:null,ox:0,oy:0,dx:0,dy:0};
+lookJoy.addEventListener('pointerdown',(e)=>{ lookJoy.setPointerCapture(e.pointerId); lookState.active=true; lookState.id=e.pointerId; lookState.ox=e.clientX; lookState.oy=e.clientY; lookState.dx=0; lookState.dy=0; updateLookThumb();});
+lookJoy.addEventListener('pointermove',(e)=>{ if(!lookState.active||e.pointerId!==lookState.id) return; lookState.dx=(e.clientX - lookState.ox)/36; lookState.dy=(e.clientY - lookState.oy)/36; lookState.dx=Math.max(-1,Math.min(1,lookState.dx)); lookState.dy=Math.max(-1,Math.min(1,lookState.dy)); updateLookThumb();});
+lookJoy.addEventListener('pointerup',(e)=>{ if(e.pointerId!==lookState.id) return; lookJoy.releasePointerCapture?.(e.pointerId); lookState.active=false; lookState.id=null; lookState.dx=lookState.dy=0; updateLookThumb();});
+function updateLookThumb(){ const tx=(lookState.dx*36); const ty=(lookState.dy*36); lookThumb.style.transform = `translate(${tx}px, ${ty}px)`; }
 
-// action buttons
+// Action buttons
 document.getElementById('placeBtnSmall').addEventListener('click', ()=> placeBlock());
 document.getElementById('place').addEventListener('click', ()=> placeBlock());
 document.getElementById('delete').addEventListener('click', ()=> digBlock());
 document.getElementById('jump').addEventListener('click', ()=>{ if(onGround) player.vel.y = player.jumpSpeed; });
 
-// hotbar
+// Hotbar
 const hotbarEl = document.getElementById('hotbar');
 let selectedType = 1;
 function buildHotbar(){ hotbarEl.innerHTML=''; const types=[1,2,3]; types.forEach(t=>{ const el=document.createElement('div'); el.className='slot'; el.textContent = t===1? 'G' : t===2? 'S' : 'W'; el.style.border = (t===selectedType)? '2px solid #fff' : ''; el.onclick = ()=>{ selectedType=t; buildHotbar(); }; hotbarEl.appendChild(el); }); }
 buildHotbar();
 
-// CAPSULE COLLISION: resolve collisions between capsule and blocks using sampling on the capsule segment.
-// Capsule segment endpoints: pa (lower sphere center) and pb (upper sphere center).
+// Capsule collision (sampling)
 function resolveCapsuleCollisions(){
   const r = player.radius;
-  const pa = new THREE.Vector3(player.pos.x, player.pos.y + r, player.pos.z); // lower center
-  const pb = new THREE.Vector3(player.pos.x, player.pos.y + player.height - r, player.pos.z); // upper center
+  const pa = new THREE.Vector3(player.pos.x, player.pos.y + r, player.pos.z);
+  const pb = new THREE.Vector3(player.pos.x, player.pos.y + player.height - r, player.pos.z);
   const seg = pb.clone().sub(pa);
-  const segLen = seg.length();
-  const segDir = segLen > 0 ? seg.clone().normalize() : new THREE.Vector3(0,1,0);
 
-  // bounding region in grid to check: expand by radius and segment height
-  const minX = Math.floor(Math.min(pa.x, pb.x) - r) + WORLD.sizeX/2;
-  const maxX = Math.floor(Math.max(pa.x, pb.x) + r) + WORLD.sizeX/2;
-  const minY = Math.floor(Math.min(pa.y, pb.y) - r);
-  const maxY = Math.floor(Math.max(pa.y, pb.y) + r);
-  const minZ = Math.floor(Math.min(pa.z, pb.z) - r) + WORLD.sizeZ/2;
-  const maxZ = Math.floor(Math.max(pa.z, pb.z) + r) + WORLD.sizeZ/2;
+  const minX = Math.floor(Math.min(pa.x,pb.x) - r) + WORLD.sizeX/2;
+  const maxX = Math.floor(Math.max(pa.x,pb.x) + r) + WORLD.sizeX/2;
+  const minY = Math.floor(Math.min(pa.y,pb.y) - r);
+  const maxY = Math.floor(Math.max(pa.y,pb.y) + r);
+  const minZ = Math.floor(Math.min(pa.z,pb.z) - r) + WORLD.sizeZ/2;
+  const maxZ = Math.floor(Math.max(pa.z,pb.z) + r) + WORLD.sizeZ/2;
 
-  // clamp to world
   const gx0 = Math.max(0, minX);
-  const gx1 = Math.min(WORLD.sizeX - 1, maxX);
+  const gx1 = Math.min(WORLD.sizeX-1, maxX);
   const gy0 = Math.max(0, minY);
-  const gy1 = Math.min(WORLD.sizeY - 1, maxY);
+  const gy1 = Math.min(WORLD.sizeY-1, maxY);
   const gz0 = Math.max(0, minZ);
-  const gz1 = Math.min(WORLD.sizeZ - 1, maxZ);
+  const gz1 = Math.min(WORLD.sizeZ-1, maxZ);
 
-  // accumulate position correction
   const correction = new THREE.Vector3(0,0,0);
   let supported = false;
-
-  // We'll sample several points along the capsule segment to find collisions robustly
   const SAMPLE_COUNT = 6;
-  for(let gz = gz0; gz <= gz1; gz++){
-    for(let gx = gx0; gx <= gx1; gx++){
-      for(let gy = gy0; gy <= gy1; gy++){
-        const b = getBlock(gx, gy, gz);
-        if(b === 0) continue;
-        // Block AABB in world coords (block bottom at by, top at by+1)
-        const bx = gx - WORLD.sizeX/2;
-        const by = gy;
-        const bz = gz - WORLD.sizeZ/2;
-        const bmin = { x: bx - 0.5, y: by, z: bz - 0.5 };
-        const bmax = { x: bx + 0.5, y: by + 1.0, z: bz + 0.5 };
 
-        // Sample along segment
-        for(let s = 0; s <= SAMPLE_COUNT; s++){
+  for(let gz=gz0; gz<=gz1; gz++){
+    for(let gx=gx0; gx<=gx1; gx++){
+      for(let gy=gy0; gy<=gy1; gy++){
+        const b = getBlock(gx,gy,gz); if(b===0) continue;
+        const bx = gx - WORLD.sizeX/2, by = gy, bz = gz - WORLD.sizeZ/2;
+        const bmin = { x: bx - 0.5, y: by, z: bz - 0.5 }, bmax = { x: bx + 0.5, y: by + 1.0, z: bz + 0.5 };
+        for(let s=0;s<=SAMPLE_COUNT;s++){
           const t = s / SAMPLE_COUNT;
-          const p = pa.clone().addScaledVector(seg, t); // point on segment
-          // find closest point q on AABB to p (clamp)
+          const p = pa.clone().addScaledVector(seg, t);
           const qx = Math.max(bmin.x, Math.min(bmax.x, p.x));
           const qy = Math.max(bmin.y, Math.min(bmax.y, p.y));
           const qz = Math.max(bmin.z, Math.min(bmax.z, p.z));
-          const q = new THREE.Vector3(qx, qy, qz);
+          const q = new THREE.Vector3(qx,qy,qz);
           const delta = p.clone().sub(q);
           const dist2 = delta.lengthSq();
           if(dist2 < r*r - 1e-6){
             const dist = Math.sqrt(Math.max(1e-8, dist2));
             const penetration = r - dist;
-            // push away along delta (if delta is zero, push upward)
             const dir = dist > 1e-8 ? delta.clone().normalize() : new THREE.Vector3(0,1,0);
-            const push = dir.clone().multiplyScalar(penetration + 1e-4); // tiny epsilon
-            // apply push to correction (we move entire capsule by push)
+            const push = dir.clone().multiplyScalar(penetration + 1e-4);
             correction.add(push);
-            // if collision from above (dir.y > 0.5) mark supported
             if(dir.y > 0.5) supported = true;
-            // break sample loop for this block point to avoid duplicating pushes
-            // but continue to check other samples to handle complex overlaps
           }
         }
       }
     }
   }
 
-  // Apply correction averaged (small smoothing)
   if(correction.lengthSq() > 1e-8){
-    // move player by correction vector (could be large if multiple overlaps; scale down a bit)
     player.pos.add(correction);
-    // if we corrected upward and velocity downward, zero vertical velocity
     if(correction.y > 0 && player.vel.y < 0) player.vel.y = 0;
   }
 
-  // set onGround if supported
   onGround = supported && player.vel.y <= 1.0;
 }
 
-// movement & physics loop
+// Capsule visual for 3rd-person
+const capsuleGroup = new THREE.Group();
+const capMat = new THREE.MeshStandardMaterial({color:0x2f6fe0, transparent:true, opacity:0.36, metalness:0.2, roughness:0.6, depthWrite:false});
+(function createCapsuleVisual(){
+  const r = player.radius;
+  const cylH = Math.max(0.001, player.height - 2*r);
+  const cylGeo = new THREE.CylinderGeometry(r, r, cylH, 16);
+  const sphGeo = new THREE.SphereGeometry(r, 12, 8);
+  const cylMesh = new THREE.Mesh(cylGeo, capMat);
+  const sphTop = new THREE.Mesh(sphGeo, capMat);
+  const sphBot = new THREE.Mesh(sphGeo, capMat);
+  cylMesh.position.y = 0;
+  sphTop.position.y = cylH/2;
+  sphBot.position.y = -cylH/2;
+  capsuleGroup.add(cylMesh, sphTop, sphBot);
+  capsuleGroup.visible = false;
+  scene.add(capsuleGroup);
+})();
+
+// Main loop: compute camera orientation first, then movement relative to camera forward (horizontal)
 let prevTime = performance.now();
 function step(){
   const now = performance.now();
   const dt = Math.min(0.05, (now - prevTime)/1000);
   prevTime = now;
 
-  // apply right joystick turning — lower sensitivity now
-  const lookSensitivity = 0.9; // lowered sensitivity
+  // apply right joystick turning (lower sensitivity)
+  const lookSensitivity = 0.9;
   if(lookState.active){
-    // scale by dt so it's framerate-independent
     look.yaw -= lookState.dx * lookSensitivity * dt * 60;
     look.pitch -= lookState.dy * (lookSensitivity*0.6) * dt * 60;
   }
   look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch));
 
-  // movement input: WASD + left joystick (note: joyState.dy positive when pushing up)
+  // compute camera quaternion from look (used to derive forward/right based on where camera is looking)
+  const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(look.pitch, look.yaw, 0, 'YXZ'));
+
+  // derive forward vector from camera (ignore vertical component)
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camQuat);
+  forward.y = 0;
+  forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).negate(); // right vector
+
+  // movement input: keys + left joystick (joyState.dy positive when pushing up)
   const iv = new THREE.Vector3();
   if(keys['w']) iv.z -= 1;
   if(keys['s']) iv.z += 1;
@@ -405,44 +363,42 @@ function step(){
   if(joyState.active){ iv.x += joyState.dx; iv.z += joyState.dy; }
   if(iv.lengthSq() > 1) iv.normalize();
 
-  // rotate input by camera yaw
-  const yaw = look.yaw;
-  const forward = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw));
+  // combine forward/right with input so forward is camera-forward
   const move = new THREE.Vector3();
   move.addScaledVector(forward, iv.z);
   move.addScaledVector(right, iv.x);
 
-  // apply horizontal velocity
+  // apply velocities
   player.vel.x = move.x * player.speed;
   player.vel.z = move.z * player.speed;
 
-  // gravity
+  // gravity & integrate
   player.vel.y -= 20 * dt;
-
-  // integrate feet position
   player.pos.addScaledVector(player.vel, dt);
 
   // capsule collisions
   resolveCapsuleCollisions();
 
-  // fallback floor
-  if(player.pos.y < 0.2){
-    player.pos.y = 0.2; player.vel.y = 0; onGround = true;
-  }
+  // floor fallback
+  if(player.pos.y < 0.2){ player.pos.y = 0.2; player.vel.y = 0; onGround = true; }
 
-  // camera placement (first- or third-person)
+  // camera placement
   if(thirdPerson){
     const eye = player.pos.clone().add(new THREE.Vector3(0, player.height + 0.6, 0));
-    const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.max(-0.6, look.pitch*0.5), look.yaw, 0, 'YXZ'));
-    const back = new THREE.Vector3(0,0,1).applyQuaternion(camQuat).multiplyScalar(6 + Math.max(0, Math.min(6, Math.abs(player.vel.length()))));
+    const camQuatTP = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.max(-0.6, look.pitch*0.5), look.yaw, 0, 'YXZ'));
+    const back = new THREE.Vector3(0,0,1).applyQuaternion(camQuatTP).multiplyScalar(6 + Math.max(0, Math.min(6, Math.abs(player.vel.length()))));
     camera.position.copy(eye).add(back);
-    camera.quaternion.copy(new THREE.Quaternion().setFromEuler(new THREE.Euler(look.pitch, look.yaw, 0, 'YXZ')));
+    camera.quaternion.copy(camQuatTP);
   } else {
     const eye = player.pos.clone().add(new THREE.Vector3(0, player.height, 0));
     camera.position.copy(eye);
-    camera.quaternion.copy(new THREE.Quaternion().setFromEuler(new THREE.Euler(look.pitch, look.yaw, 0, 'YXZ')));
+    camera.quaternion.copy(camQuat);
   }
+
+  // update capsule visual
+  const capCenterY = player.pos.y + player.height/2;
+  capsuleGroup.position.set(player.pos.x, capCenterY, player.pos.z);
+  capsuleGroup.visible = thirdPerson;
 
   renderer.setSize(innerWidth, innerHeight);
   renderer.render(scene, camera);
@@ -450,25 +406,20 @@ function step(){
 }
 requestAnimationFrame(step);
 
-// save/load world
+// Save/load world
 function saveWorld(){ try{ localStorage.setItem('minicraft_world', JSON.stringify(Array.from(blocks))); }catch(e){} }
-function loadWorld(){ try{ const s = localStorage.getItem('minicraft_world'); if(s){ const arr = JSON.parse(s); for(let i=0;i<blocks.length && i<arr.length;i++) blocks[i]=arr[i]; rebuildMeshes(); } }catch(e){} }
+function loadWorld(){ try{ const s = localStorage.getItem('minicraft_world'); if(s){ const arr = JSON.parse(s); for(let i=0;i<arr.length && i<blocks.length;i++) blocks[i] = arr[i]; rebuildMeshes(); } }catch(e){} }
 window.addEventListener('beforeunload', saveWorld);
 loadWorld();
-spawnPlayerOnCenter();
 
-// resize & fps
+// Resize & FPS
 window.addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 const fpsEl = document.getElementById('fps'); let lastFPS = performance.now(), frames = 0;
-setInterval(()=>{ const now = performance.now(); fpsEl.textContent = Math.round(frames*1000/(now-lastFPS)) + ' fps'; frames=0; lastFPS=now; }, 1000);
+setInterval(()=>{ const now = performance.now(); fpsEl.textContent = Math.round(frames*1000/(now-lastFPS)) + ' fps'; frames = 0; lastFPS = now; }, 1000);
 (function tickFrames(){ frames++; requestAnimationFrame(tickFrames); })();
 
-// debug helpers
-window._minicraft = {
-  blocks, WORLD, rebuildMeshes, saveWorld, loadWorld, digBlock, placeBlock,
-  spawnPlayerOnTopAt, spawnPlayerOnCenter, player,
-  setLookSensitivity: (s) => { /* for quick testing */ /* not persisted */ }
-};
+// Debug helpers
+window._minicraft = { blocks, WORLD, rebuildMeshes, saveWorld, loadWorld, digBlock, placeBlock, spawnPlayerOnTopAt, spawnPlayerOnCenter, player };
 
 </script>
 </body>
