@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game with Joystick, Collisions, POV, Build</title>
+  <title>Minecraft-like Game with Drag Rotation, Collisions, Build</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -22,7 +22,7 @@
     }
     #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
 
-    /* Right-side action cluster: guaranteed on-screen */
+    /* Right-side controls: always visible */
     #uiRight {
       position: absolute;
       right: 14px;
@@ -54,8 +54,7 @@
       background: rgba(100,100,100,0.65);
       border: 2px solid rgba(255,255,255,0.3);
       border-radius: 50%;
-      left: 41px;
-      top: 41px;
+      left: 41px; top: 41px;
       touch-action: none;
     }
 
@@ -92,10 +91,9 @@
   <div id="joystick"><div id="stick"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
   <script>
     // ------------------------------------------------------------
-    // Utilities: seeded 2D value noise for terrain
+    // Utilities: seeded 2D noise
     // ------------------------------------------------------------
     function mulberry32(seed) {
       return function() {
@@ -144,8 +142,6 @@
     scene.background = new THREE.Color(0x87ceeb);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1200);
-    camera.position.set(0, 6, 12);
-
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
@@ -153,23 +149,21 @@
     const hemi = new THREE.HemisphereLight(0xffffff, 0x889988, 0.7);
     const dir = new THREE.DirectionalLight(0xffffff, 0.9);
     dir.position.set(20, 30, 10);
-    scene.add(hemi);
-    scene.add(dir);
+    scene.add(hemi); scene.add(dir);
 
     // ------------------------------------------------------------
     // Voxel world
     // ------------------------------------------------------------
     const BLOCK_SIZE = 1;
-    const WORLD_SIZE = 64;      // X/Z size
-    const MAX_HEIGHT = 16;      // max terrain height
-    const GROUND_FLOOR = 0;
+    const WORLD_SIZE = 64;
+    const MAX_HEIGHT = 16;
 
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
     const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-    const voxels = new Map(); // key: "x,y,z" -> mesh
+    const voxels = new Map(); // "x,y,z" -> mesh
     function key(x,y,z){ return `${x},${y},${z}`; }
 
     function addBlock(x, y, z, type = "grass") {
@@ -177,8 +171,8 @@
       if (voxels.has(k)) return;
       const mat = type === "stone" ? matStone : (type === "dirt" ? matDirt : matGrass);
       const mesh = new THREE.Mesh(blockGeo, mat);
-      mesh.position.set(x + BLOCK_SIZE/2, y + BLOCK_SIZE/2, z + BLOCK_SIZE/2);
-      mesh.userData = { x, y, z, solid: true, type };
+      mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+      mesh.userData = { x, y, z, type, solid: true };
       scene.add(mesh);
       voxels.set(k, mesh);
     }
@@ -191,7 +185,7 @@
       voxels.delete(k);
     }
 
-    // Terrain generation: layered noise -> heightmap
+    // Terrain generation
     const noise = makeNoise2D(1337);
     const SCALE = 0.08;
     for (let x = 0; x < WORLD_SIZE; x++) {
@@ -199,7 +193,7 @@
         const nx = x * SCALE, nz = z * SCALE;
         const hVal = (noise(nx, nz) * 0.65) + (noise(nx * 0.45, nz * 0.45) * 0.35);
         const height = Math.floor((hVal * 0.5 + 0.5) * MAX_HEIGHT);
-        for (let y = GROUND_FLOOR; y <= height; y++) {
+        for (let y = 0; y <= height; y++) {
           const type = y === height ? "grass" : (y > height - 3 ? "dirt" : "stone");
           addBlock(x, y, z, type);
         }
@@ -215,6 +209,9 @@
     player.position.set(WORLD_SIZE/2 + 0.5, MAX_HEIGHT + 8, WORLD_SIZE/2 + 0.5);
     scene.add(player);
 
+    const PSX = 0.8, PSY = 1.6, PSZ = 0.8; // player AABB size
+    const HALF_X = PSX/2, HALF_Y = PSY/2, HALF_Z = PSZ/2;
+
     const playerVel = new THREE.Vector3(0, 0, 0);
     const GRAVITY = 20;
     const MOVE_SPEED = 4.5;
@@ -222,12 +219,12 @@
     let onGround = false;
     let pov = "third";
 
-    // Bounding box half-sizes for player AABB
-    const PSX = 0.8, PSY = 1.6, PSZ = 0.8;
-    const HALF_X = PSX / 2, HALF_Y = PSY / 2, HALF_Z = PSZ / 2;
+    // Facing angles via drag
+    let yaw = 0;    // rotation around Y
+    let pitch = 0;  // rotation around X (camera only, clamped)
 
     // ------------------------------------------------------------
-    // Joystick
+    // Joystick (inverted forward/backward: up = backward, down = forward)
     // ------------------------------------------------------------
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
@@ -248,10 +245,12 @@
       const dy = t.clientY - joyCenter.y;
       const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
       const angle = Math.atan2(dy, dx);
-      joyVec.x = Math.cos(angle) * (dist / JOY_RADIUS);
-      joyVec.y = Math.sin(angle) * (dist / JOY_RADIUS);
-      stick.style.left = (41 + joyVec.x * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + joyVec.y * JOY_RADIUS) + "px";
+      const rawX = Math.cos(angle) * (dist / JOY_RADIUS);
+      const rawY = Math.sin(angle) * (dist / JOY_RADIUS);
+      joyVec.x = rawX;
+      joyVec.y = -rawY; // invert forward/backward
+      stick.style.left = (41 + rawX * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + rawY * JOY_RADIUS) + "px";
     }
     joystick.addEventListener("touchstart", updateJoystick, { passive: true });
     joystick.addEventListener("touchmove", updateJoystick, { passive: true });
@@ -259,6 +258,31 @@
       joyVec.x = 0; joyVec.y = 0;
       stick.style.left = "41px"; stick.style.top = "41px";
     });
+
+    // ------------------------------------------------------------
+    // Finger drag rotation (exclude joystick area)
+    // ------------------------------------------------------------
+    let dragging = false, lastX = 0, lastY = 0;
+    document.addEventListener("touchstart", e => {
+      if (e.target.closest("#joystick")) return;
+      dragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener("touchmove", e => {
+      if (!dragging) return;
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+      const dx = tx - lastX;
+      const dy = ty - lastY;
+      yaw -= dx * 0.005;               // horizontal drag rotates yaw
+      pitch -= dy * 0.005;             // vertical drag rotates pitch
+      pitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch)); // clamp pitch
+      lastX = tx; lastY = ty;
+    }, { passive: true });
+
+    document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
 
     // ------------------------------------------------------------
     // Buttons: POV / Jump / Place / Delete
@@ -316,14 +340,12 @@
     }
 
     function resolveCollisions() {
-      // Player center
       const px = player.position.x;
       const py = player.position.y;
       const pz = player.position.z;
 
       onGround = false;
 
-      // Only test blocks around the player to keep it fast
       const minX = Math.floor(px - 1.5);
       const maxX = Math.floor(px + 1.5);
       const minY = Math.floor(py - 1.2);
@@ -342,12 +364,10 @@
             const BS = BLOCK_SIZE;
 
             if (aabbIntersect(px, py, pz, PSX, PSY, PSZ, bx, by, bz, BS, BS, BS)) {
-              // Penetration along each axis
               const penX = (HALF_X + BS/2) - Math.abs(px - bx);
               const penY = (HALF_Y + BS/2) - Math.abs(py - by);
               const penZ = (HALF_Z + BS/2) - Math.abs(pz - bz);
 
-              // Move out along smallest penetration axis
               if (penX < penY && penX < penZ) {
                 const sign = (px < bx) ? -1 : 1;
                 player.position.x += sign * penX;
@@ -355,11 +375,9 @@
               } else if (penY < penX && penY < penZ) {
                 const sign = (py < by) ? -1 : 1;
                 player.position.y += sign * penY;
-                if (sign < 0) { // we were above the block and landed on it
-                  onGround = true;
-                }
-                if (sign > 0 && playerVel.y < 0) playerVel.y = 0; // prevent sinking
-                if (sign < 0 && playerVel.y > 0) playerVel.y = 0; // ceiling bump
+                if (sign < 0) onGround = true;   // landed on block
+                if (playerVel.y < 0 && sign > 0) playerVel.y = 0; // stop sinking
+                if (playerVel.y > 0 && sign < 0) playerVel.y = 0; // ceiling bump
               } else {
                 const sign = (pz < bz) ? -1 : 1;
                 player.position.z += sign * penZ;
@@ -370,7 +388,7 @@
         }
       }
 
-      // World bounds and ground plane safety
+      // Bounds safety
       player.position.x = Math.max(HALF_X, Math.min(WORLD_SIZE - HALF_X, player.position.x));
       player.position.z = Math.max(HALF_Z, Math.min(WORLD_SIZE - HALF_Z, player.position.z));
       if (player.position.y < HALF_Y) {
@@ -381,26 +399,55 @@
     }
 
     // ------------------------------------------------------------
-    // Camera update
+    // Camera and facing
     // ------------------------------------------------------------
+    function getFacingVectors() {
+      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+      const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+
+      // Forward vector based on yaw/pitch (y pitch affects look, not movement vertical)
+      const forward = new THREE.Vector3(
+        -sinY * cosP,
+        0,                      // keep movement on XZ plane
+        -cosY * cosP
+      );
+      forward.normalize();
+
+      const right = new THREE.Vector3(cosY, 0, -sinY).normalize();
+      return { forward, right };
+    }
+
     function updateCamera() {
-      const target = player.position;
+      const { forward, right } = getFacingVectors();
+      const target = player.position.clone();
+
       if (pov === "first") {
-        camera.position.copy(target).add(new THREE.Vector3(0, 0.6, 0));
-        camera.lookAt(target.clone().add(new THREE.Vector3(0, 0.25, -1)));
+        const eye = target.clone().add(new THREE.Vector3(0, 0.6, 0));
+        camera.position.copy(eye);
+
+        // Look dir uses pitch for aiming
+        const lookDir = new THREE.Vector3(
+          forward.x,
+          Math.sin(pitch),      // vertical aim
+          forward.z
+        ).normalize();
+
+        const lookTarget = eye.clone().add(lookDir);
+        camera.lookAt(lookTarget);
       } else {
-        const offset = new THREE.Vector3(0, 4, 8);
-        camera.position.copy(target).add(offset);
-        camera.lookAt(target);
+        // Third-person: offset back and up relative to facing
+        const back = forward.clone().multiplyScalar(-1);
+        const camPos = target.clone()
+          .add(new THREE.Vector3(0, 3.5, 0))
+          .add(back.multiplyScalar(8));
+        camera.position.copy(camPos);
+        camera.lookAt(target.clone().add(new THREE.Vector3(0, 1.0, 0)));
       }
     }
 
     // ------------------------------------------------------------
     // Main loop
     // ------------------------------------------------------------
-    const forward = new THREE.Vector3(0, 0, -1);
-    const right   = new THREE.Vector3(1, 0, 0);
-
     let lastTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
@@ -411,10 +458,12 @@
       // Gravity
       playerVel.y -= GRAVITY * dt;
 
-      // Movement from joystick (x = strafe, y = forward)
+      // Movement (inverted forward/backward applied already in joyVec)
+      const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(right, joyVec.x)
         .addScaledVector(forward, joyVec.y);
+
       if (moveDir.lengthSq() > 0) moveDir.normalize();
 
       playerVel.x = moveDir.x * MOVE_SPEED;
@@ -425,11 +474,12 @@
       player.position.y += playerVel.y * dt;
       player.position.z += playerVel.z * dt;
 
-      // Collisions keep us above solid blocks
+      // Collisions
       resolveCollisions();
 
-      // Render
+      // Camera
       updateCamera();
+
       renderer.render(scene, camera);
     }
     animate();
@@ -445,7 +495,7 @@
     });
 
     // ------------------------------------------------------------
-    // Desktop fallback controls (WASD + Space)
+    // Desktop fallbacks (WASD + Space) mirroring joystick inversion
     // ------------------------------------------------------------
     const keys = new Set();
     window.addEventListener('keydown', e => {
@@ -453,17 +503,20 @@
       if (e.code === "Space") jumpBtn.click();
     });
     window.addEventListener('keyup', e => keys.delete(e.code));
+
     function desktopControlsToJoystick() {
       let x = 0, y = 0;
       if (keys.has("KeyA")) x -= 1;
       if (keys.has("KeyD")) x += 1;
-      if (keys.has("KeyW")) y += 1;
-      if (keys.has("KeyS")) y -= 1;
+      if (keys.has("KeyW")) y += 1;  // W = backward (inverted)
+      if (keys.has("KeyS")) y -= 1;  // S = forward
       const len = Math.hypot(x, y);
       if (len > 0) { x /= len; y /= len; }
       joyVec.x = x; joyVec.y = y;
-      stick.style.left = (41 + joyVec.x * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + joyVec.y * JOY_RADIUS) + "px";
+
+      // Visual stick follows desktop input (invert display back to raw)
+      stick.style.left = (41 + x * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + (-y) * JOY_RADIUS) + "px";
       requestAnimationFrame(desktopControlsToJoystick);
     }
     desktopControlsToJoystick();
