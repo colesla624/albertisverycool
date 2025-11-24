@@ -352,7 +352,7 @@ function step(){
   const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camQuat);
   forward.y = 0;
   forward.normalize();
-  // FIXED: use up × forward for a correct right-hand vector (no inversion)
+  // FIX: use up × forward to get the correct right-hand vector (no inversion)
   const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), forward);
 
   // movement input: keys + left joystick (joyState.dy positive when pushing up)
