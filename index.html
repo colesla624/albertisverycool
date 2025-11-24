@@ -64,14 +64,14 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
 dirLight.position.set(4,8,2);
 scene.add(dirLight);
 
-// World
+// World setup
 const WORLD = { sizeX:32, sizeY:18, sizeZ:32, seaLevel:6 };
 const total = WORLD.sizeX * WORLD.sizeY * WORLD.sizeZ;
 const blocks = new Uint8Array(total);
 function idx(x,y,z){ return x + WORLD.sizeX * (y + WORLD.sizeY * z); }
 function noise2(x,z){ return (Math.sin(x*12.9898 + z*78.233) * 43758.5453 % 1 + Math.cos(z*6.2831 + x*3.1415)*0.5)*0.5; }
 
-// generate terrain
+// terrain generation
 for(let z=0; z<WORLD.sizeZ; z++){
   for(let x=0; x<WORLD.sizeX; x++){
     const nx = (x/WORLD.sizeX)-0.5;
@@ -87,7 +87,7 @@ for(let z=0; z<WORLD.sizeZ; z++){
 function plantTree(cx,cz){ const gy = Math.max(5,WORLD.seaLevel+1); for(let y=gy+1;y<gy+5;y++){ if(y < WORLD.sizeY) blocks[idx(cx,y,cz)] = 3; } }
 plantTree(16,14); plantTree(22,6);
 
-// Instanced rendering for blocks
+// Instanced rendering
 const matColors = {1:0x5fb86b, 2:0x8f8f8f, 3:0x8b5a2b};
 const instanced = {};
 function rebuildMeshes(){
@@ -126,5 +126,4 @@ const player = { pos: new THREE.Vector3(0,7,0), vel: new THREE.Vector3(0,0,0), s
 let onGround = false;
 
 function worldToGrid(v){ return { x: Math.floor(v.x + WORLD.sizeX/2 + 0.0001), y: Math.floor(v.y + 0.0001), z: Math.floor(v.z + WORLD.sizeZ/2 + 0.0001) }; }
-function gridToWorld(gx,gy,gz){ return new THREE.Vector3(gx - WORLD.sizeX/2, gy, gz - WORLD.sizeZ/2); }
-function inWorld(x,y,z){ return x>=0 && y>=0 && z>=0 && x <
+function gridToWorld(gx,gy,gz){ return new THREE.Vector3(gx - WORLD.sizeX/2, gy,
