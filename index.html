@@ -1,108 +1,486 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>2D Platformer</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>MiniCraft — Mobile-friendly Voxel Demo (FPV + Jump)</title>
   <style>
-    body { margin:0; background:#111; }
-    canvas { display:block; }
+    html,body{height:100%;margin:0;background:#07131a;color:#e6f1f6;overflow:hidden;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    canvas{display:block;width:100%;height:100%}
+    #ui{position:fixed;left:12px;top:12px;z-index:20;pointer-events:none}
+    #hotbar{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;display:flex;gap:8px;z-index:21;pointer-events:auto}
+    .slot{width:56px;height:56px;border-radius:8px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-weight:700;user-select:none}
+    #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;line-height:18px;text-align:center;font-weight:800;pointer-events:none;z-index:15;opacity:0.9}
+    #controls{position:fixed;left:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;z-index:20;pointer-events:auto}
+    .joystick{width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.03);touch-action:none;display:flex;align-items:center;justify-content:center;color:#9fb2c8}
+    .btn{width:64px;height:64px;border-radius:12px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-weight:800;color:#eaf6ff}
+    #tips{position:fixed;right:12px;top:12px;color:#9fb2c8;font-size:13px;opacity:0.95;z-index:20;pointer-events:none}
+    #fps{font-size:12px;opacity:.85}
   </style>
 </head>
 <body>
-<canvas id="game"></canvas>
+<canvas id="c"></canvas>
+<div id="ui"><div id="fps"></div></div>
+<div id="crosshair">+</div>
+<div id="tips">Drag to look • Tap to dig • Two-finger tap to place • Joystick to move • Jump: ▲ or Space</div>
+
+<div id="controls">
+  <div id="joy" class="joystick">Move</div>
+  <div style="display:flex;gap:8px">
+    <div id="jump" class="btn">▲</div>
+    <div id="place" class="btn">■</div>
+  </div>
+</div>
+
+<div id="hotbar"></div>
+
+<!-- Three.js -->
+<script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
-const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
-canvas.width=window.innerWidth;canvas.height=window.innerHeight;
+/*
+  MiniCraft — compact mobile-friendly voxel demo.
+  Changes in this file:
+  - First-person camera (camera placed at player's head)
+  - Full camera turning: mouse pointer-lock, mouse-drag, touch-drag look
+  - Jumping via Space (desktop) and jump button (mobile), using onGround detection
+  - Collision resolution preserved (AABB) so player can't pass through blocks while jumping/walking
+*/
 
-const TILE=32;
-const levels=[
-  {
-    name:"Level 1",
-    width:32,height:16,
-    tiles:Array.from({length:16},(_,y)=>{
-      const row=Array(32).fill(0);
-      if(y===15){row.fill(1);row[30]=4;} // ground + goal
-      return row;
-    }),
-    start:{x:64,y:64}
-  },
-  {
-    name:"Level 2",
-    width:32,height:16,
-    tiles:Array.from({length:16},(_,y)=>{
-      const row=Array(32).fill(0);
-      if(y===15){row.fill(1);row[28]=4;}
-      if(y===13){row[10]=1;row[14]=1;row[18]=1;row[22]=1;}
-      return row;
-    }),
-    start:{x:64,y:64}
-  }
-];
-let levelIndex=0;
+// Renderer & scene
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x07131a);
 
-const player={x:0,y:0,w:24,h:28,vx:0,vy:0,onGround:false};
-function loadLevel(i){
-  levelIndex=i%levels.length;
-  player.x=levels[levelIndex].start.x;
-  player.y=levels[levelIndex].start.y;
-  player.vx=player.vy=0;
-}
-loadLevel(0);
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x07131a, 0.01);
 
-function tileAt(px,py){
-  const L=levels[levelIndex];
-  const tx=Math.floor(px/TILE),ty=Math.floor(py/TILE);
-  if(tx<0||ty<0||tx>=L.width||ty>=L.height)return 0;
-  return L.tiles[ty][tx];
+// Camera (first-person)
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 1000);
+
+// Lighting
+const hemi = new THREE.HemisphereLight(0xfff7e6, 0x081827, 0.9);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+dir.position.set(4, 8, 2);
+scene.add(dir);
+
+// World parameters & blocks
+const WORLD = { sizeX: 32, sizeY: 18, sizeZ: 32, seaLevel: 6 };
+const total = WORLD.sizeX * WORLD.sizeY * WORLD.sizeZ;
+const blocks = new Uint8Array(total); // 0=air,1=grass,2=stone,3=wood
+function idx(x,y,z){ return x + WORLD.sizeX * (y + WORLD.sizeY * z); }
+
+// simple deterministic pseudo-noise (fast)
+function noise2(x, z){
+  return (Math.sin(x*12.9898 + z*78.233) * 43758.5453 % 1 + Math.cos(z*6.2831 + x*3.1415) * 0.5) * 0.5;
 }
 
-const keys={};
-window.addEventListener("keydown",e=>keys[e.code]=true);
-window.addEventListener("keyup",e=>keys[e.code]=false);
-
-function update(dt){
-  // input
-  if(keys["ArrowLeft"]) player.vx=-200;
-  else if(keys["ArrowRight"]) player.vx=200;
-  else player.vx=0;
-  if(keys["Space"]&&player.onGround){player.vy=-500;player.onGround=false;}
-
-  // physics
-  player.vy+=1000*dt;
-  player.x+=player.vx*dt;
-  player.y+=player.vy*dt;
-
-  // collision
-  const t=tileAt(player.x+player.w/2,player.y+player.h);
-  if(t===1||t===4){
-    player.y=Math.floor((player.y+player.h)/TILE)*TILE-player.h;
-    player.vy=0;player.onGround=true;
-    if(t===4){alert("Level complete!");loadLevel(levelIndex+1);}
-  }
-}
-
-function draw(){
-  ctx.fillStyle="#222";ctx.fillRect(0,0,canvas.width,canvas.height);
-  const L=levels[levelIndex];
-  for(let y=0;y<L.height;y++){
-    for(let x=0;x<L.width;x++){
-      const t=L.tiles[y][x];if(!t)continue;
-      const px=x*TILE,py=y*TILE;
-      if(t===1){ctx.fillStyle="#555";ctx.fillRect(px,py,TILE,TILE);}
-      if(t===4){ctx.fillStyle="#1e88e5";ctx.fillRect(px,py,TILE,TILE);}
+// terrain generation
+for(let z=0; z<WORLD.sizeZ; z++){
+  for(let x=0; x<WORLD.sizeX; x++){
+    const nx = (x/WORLD.sizeX) - 0.5;
+    const nz = (z/WORLD.sizeZ) - 0.5;
+    const h = Math.floor(WORLD.seaLevel + 3 * (Math.sin(nx*3.4) + Math.cos(nz*2.7)) + 1.5 * (noise2(nx*3, nz*3)));
+    for(let y=0; y<WORLD.sizeY; y++){
+      let t = 0;
+      if(y <= h) t = (y > h - 2) ? 1 : 2;
+      blocks[idx(x,y,z)] = t;
     }
   }
-  ctx.fillStyle="#ffd166";ctx.fillRect(player.x,player.y,player.w,player.h);
 }
 
-let last=performance.now();
-function loop(now){
-  const dt=(now-last)/1000;last=now;
-  update(dt);
-  draw();
-  requestAnimationFrame(loop);
+// small trees
+function plantTree(cx, cz){
+  const groundY = Math.max(5, WORLD.seaLevel + 1);
+  for(let y=groundY+1; y<groundY+5; y++){
+    if(y < WORLD.sizeY) blocks[idx(cx, y, cz)] = 3;
+  }
 }
-requestAnimationFrame(loop);
+plantTree(16, 14);
+plantTree(22, 6);
+
+// materials/colors
+const matColors = {1:0x5fb86b, 2:0x8f8f8f, 3:0x8b5a2b};
+const instanced = {};
+
+// build instanced meshes
+function rebuildMeshes(){
+  for(const k in instanced){
+    if(instanced[k]){ scene.remove(instanced[k]); instanced[k].geometry.dispose(); instanced[k].material.dispose(); }
+  }
+  const mtx = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  for(const type of [1,2,3]){
+    let count = 0;
+    for(let i=0;i<total;i++) if(blocks[i] === type) count++;
+    if(count === 0){ instanced[type] = null; continue; }
+    const geo = new THREE.BoxGeometry(1,1,1);
+    const mat = new THREE.MeshStandardMaterial({color: matColors[type], flatShading: true});
+    const mesh = new THREE.InstancedMesh(geo, mat, count);
+    let id = 0;
+    for(let z=0; z<WORLD.sizeZ; z++){
+      for(let x=0; x<WORLD.sizeX; x++){
+        for(let y=0; y<WORLD.sizeY; y++){
+          if(blocks[idx(x,y,z)] !== type) continue;
+          pos.set(x - WORLD.sizeX/2, y, z - WORLD.sizeZ/2);
+          mtx.makeTranslation(pos.x, pos.y, pos.z);
+          mesh.setMatrixAt(id++, mtx);
+        }
+      }
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+    instanced[type] = mesh;
+  }
+}
+rebuildMeshes();
+
+// grid helper for orientation
+const grid = new THREE.GridHelper(60, 60, 0x24323b, 0x152027);
+grid.rotation.x = Math.PI/2;
+grid.position.y = -0.5;
+scene.add(grid);
+
+// player: feet position is player.pos.y
+const player = {
+  pos: new THREE.Vector3(0, 7, 0),
+  vel: new THREE.Vector3(0, 0, 0),
+  speed: 4.6,
+  jumpSpeed: 7.5,
+  height: 1.7,
+  halfWidth: 0.35,
+  halfDepth: 0.35
+};
+
+let onGround = false;
+
+// world helpers
+function worldToGrid(v){
+  return { x: Math.floor(v.x + WORLD.sizeX/2 + 0.0001), y: Math.floor(v.y + 0.0001), z: Math.floor(v.z + WORLD.sizeZ/2 + 0.0001) };
+}
+function inWorld(x,y,z){ return x>=0 && y>=0 && z>=0 && x < WORLD.sizeX && y < WORLD.sizeY && z < WORLD.sizeZ; }
+function getBlock(x,y,z){ if(!inWorld(x,y,z)) return 0; return blocks[idx(x,y,z)]; }
+function setBlock(x,y,z,t){ if(!inWorld(x,y,z)) return; blocks[idx(x,y,z)] = t; }
+
+// spawn player on top center
+function spawnPlayerOnTopAt(gridX, gridZ){
+  if(!inWorld(gridX, 0, gridZ)) return false;
+  for(let y=WORLD.sizeY-1; y >= 0; y--){
+    if(getBlock(gridX, y, gridZ) !== 0){
+      const wx = gridX - WORLD.sizeX/2 + 0.5;
+      const wz = gridZ - WORLD.sizeZ/2 + 0.5;
+      const wy = y + 1.0;
+      player.pos.set(wx, wy, wz);
+      player.vel.set(0,0,0);
+      return true;
+    }
+  }
+  player.pos.set(0, WORLD.seaLevel + 4, 0);
+  player.vel.set(0,0,0);
+  return false;
+}
+function spawnPlayerOnCenter(){ spawnPlayerOnTopAt(Math.floor(WORLD.sizeX/2), Math.floor(WORLD.sizeZ/2)); }
+spawnPlayerOnCenter();
+
+// raycast for dig/place
+function raycastBlocks(origin, dir, maxD=8, step=0.12){
+  const p = origin.clone();
+  for(let d=0; d<maxD; d+=step){
+    p.addScaledVector(dir, step);
+    const g = worldToGrid(p);
+    if(!inWorld(g.x, g.y, g.z)) continue;
+    const b = getBlock(g.x, g.y, g.z);
+    if(b !== 0){
+      const side = { x: Math.round(-dir.x), y: Math.round(-dir.y), z: Math.round(-dir.z) };
+      return { pos: g, side };
+    }
+  }
+  return null;
+}
+function digBlock(){
+  const origin = camera.position.clone();
+  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+  const hit = raycastBlocks(origin, dir);
+  if(hit){ setBlock(hit.pos.x, hit.pos.y, hit.pos.z, 0); rebuildMeshes(); saveWorld(); }
+}
+function placeBlock(){
+  const origin = camera.position.clone();
+  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+  const hit = raycastBlocks(origin, dir);
+  if(hit){
+    const px = hit.pos.x + hit.side.x;
+    const py = hit.pos.y + hit.side.y;
+    const pz = hit.pos.z + hit.side.z;
+    if(inWorld(px,py,pz) && getBlock(px,py,pz) === 0){
+      setBlock(px,py,pz, selectedType);
+      rebuildMeshes();
+      saveWorld();
+    }
+  }
+}
+
+// touch tap gestures
+let lastTouchTime = 0;
+canvas.addEventListener('touchstart', (e)=>{
+  if(e.touches.length === 1){
+    const now = performance.now();
+    if(now - lastTouchTime < 350){ digBlock(); }
+    lastTouchTime = now;
+  }
+  if(e.touches.length === 2) placeBlock();
+});
+
+// Camera look state (pitch & yaw)
+const look = {pitch: 0, yaw: 0};
+
+// Pointer lock + mouse look
+let pointerLocked = false;
+canvas.addEventListener('click', ()=>{ if(!('ontouchstart' in window)) canvas.requestPointerLock?.(); });
+document.addEventListener('pointerlockchange', ()=>{ pointerLocked = (document.pointerLockElement === canvas); });
+
+window.addEventListener('mousemove', (e)=>{
+  if(pointerLocked){
+    look.yaw -= e.movementX * 0.0026;
+    look.pitch -= e.movementY * 0.0026;
+    look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch));
+  }
+});
+
+// Mouse drag look when not pointer-locked (desktop)
+let mouseLookActive = false;
+let prevMouse = {x:0,y:0};
+canvas.addEventListener('mousedown', (e)=>{
+  if(e.button === 0 && !pointerLocked && !('ontouchstart' in window)){
+    mouseLookActive = true;
+    prevMouse.x = e.clientX; prevMouse.y = e.clientY;
+  }
+});
+window.addEventListener('mouseup', ()=>{ mouseLookActive = false; });
+window.addEventListener('mousemove', (e)=>{
+  if(mouseLookActive){
+    const dx = e.clientX - prevMouse.x;
+    const dy = e.clientY - prevMouse.y;
+    prevMouse.x = e.clientX; prevMouse.y = e.clientY;
+    look.yaw -= dx * 0.0026;
+    look.pitch -= dy * 0.0026;
+    look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch));
+  }
+});
+
+// Touch look (dragging on canvas, avoids UI)
+let touchLook = {active:false, id:null, px:0, py:0};
+function isOverUI(x,y){
+  const el = document.elementFromPoint(x,y);
+  if(!el) return false;
+  return el.closest('#joy') || el.closest('#jump') || el.closest('#place') || el.closest('#hotbar') || el.closest('#controls');
+}
+canvas.addEventListener('pointerdown', (e)=>{
+  if(e.pointerType === 'touch' || e.pointerType === 'pen'){
+    if(isOverUI(e.clientX, e.clientY)) return;
+    touchLook.active = true;
+    touchLook.id = e.pointerId;
+    touchLook.px = e.clientX; touchLook.py = e.clientY;
+    canvas.setPointerCapture?.(e.pointerId);
+  }
+});
+canvas.addEventListener('pointermove', (e)=>{
+  if(touchLook.active && e.pointerId === touchLook.id){
+    const dx = e.clientX - touchLook.px;
+    const dy = e.clientY - touchLook.py;
+    touchLook.px = e.clientX; touchLook.py = e.clientY;
+    look.yaw -= dx * 0.0045;
+    look.pitch -= dy * 0.0045;
+    look.pitch = Math.max(-1.4, Math.min(1.4, look.pitch));
+  }
+});
+canvas.addEventListener('pointerup', (e)=>{
+  if(touchLook.active && e.pointerId === touchLook.id){ touchLook.active = false; touchLook.id = null; }
+});
+canvas.addEventListener('pointercancel', (e)=>{
+  if(touchLook.active && e.pointerId === touchLook.id){ touchLook.active = false; touchLook.id = null; }
+});
+
+// keyboard controls + jump (space)
+const keys = {};
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if(e.key === ' '){ e.preventDefault(); if(onGround) player.vel.y = player.jumpSpeed; }
+});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+// touch joystick for movement
+const joyEl = document.getElementById('joy');
+let joyState = {active:false, ox:0, oy:0, dx:0, dy:0};
+joyEl.addEventListener('pointerdown', (e)=>{ joyEl.setPointerCapture(e.pointerId); joyState.active = true; joyState.ox = e.clientX; joyState.oy = e.clientY; });
+joyEl.addEventListener('pointermove', (e)=>{ if(!joyState.active) return; joyState.dx = (e.clientX - joyState.ox) / 40; joyState.dy = (e.clientY - joyState.oy) / 40; joyState.dx = Math.max(-1, Math.min(1, joyState.dx)); joyState.dy = Math.max(-1, Math.min(1, joyState.dy)); });
+joyEl.addEventListener('pointerup', (e)=>{ joyState.active = false; joyState.dx = joyState.dy = 0; });
+
+// jump/place buttons
+document.getElementById('jump').addEventListener('click', ()=>{ if(onGround) player.vel.y = player.jumpSpeed; });
+document.getElementById('place').addEventListener('click', ()=>placeBlock());
+
+// hotbar UI
+const hotbarEl = document.getElementById('hotbar');
+let selectedType = 1;
+function buildHotbar(){
+  hotbarEl.innerHTML = '';
+  const types = [1,2,3];
+  types.forEach(t=>{
+    const el = document.createElement('div');
+    el.className = 'slot';
+    el.textContent = t===1? 'G' : t===2? 'S' : 'W';
+    el.style.border = (t===selectedType)? '2px solid #fff' : '';
+    el.onclick = ()=>{ selectedType = t; buildHotbar(); };
+    hotbarEl.appendChild(el);
+  });
+}
+buildHotbar();
+
+// collision (AABB) resolution
+function resolveCollisions(){
+  const halfW = player.halfWidth, halfD = player.halfDepth;
+  let minX = player.pos.x - halfW, maxX = player.pos.x + halfW;
+  let minY = player.pos.y, maxY = player.pos.y + player.height;
+  let minZ = player.pos.z - halfD, maxZ = player.pos.z + halfD;
+
+  const gmin = worldToGrid(new THREE.Vector3(minX, minY, minZ));
+  const gmax = worldToGrid(new THREE.Vector3(maxX, maxY, maxZ));
+
+  const gx0 = Math.max(0, Math.min(WORLD.sizeX-1, gmin.x));
+  const gx1 = Math.max(0, Math.min(WORLD.sizeX-1, gmax.x));
+  const gy0 = Math.max(0, Math.min(WORLD.sizeY-1, gmin.y));
+  const gy1 = Math.max(0, Math.min(WORLD.sizeY-1, gmax.y));
+  const gz0 = Math.max(0, Math.min(WORLD.sizeZ-1, gmin.z));
+  const gz1 = Math.max(0, Math.min(WORLD.sizeZ-1, gmax.z));
+
+  let supported = false;
+
+  for(let gz = gz0; gz <= gz1; gz++){
+    for(let gx = gx0; gx <= gx1; gx++){
+      for(let gy = gy0; gy <= gy1; gy++){
+        const b = getBlock(gx, gy, gz);
+        if(b === 0) continue;
+
+        const bx = gx - WORLD.sizeX/2;
+        const by = gy;
+        const bz = gz - WORLD.sizeZ/2;
+        const bminX = bx - 0.5, bmaxX = bx + 0.5;
+        const bminY = by,        bmaxY = by + 1.0;
+        const bminZ = bz - 0.5, bmaxZ = bz + 0.5;
+
+        const ox = Math.min(maxX, bmaxX) - Math.max(minX, bminX);
+        const oy = Math.min(maxY, bmaxY) - Math.max(minY, bminY);
+        const oz = Math.min(maxZ, bmaxZ) - Math.max(minZ, bminZ);
+
+        if(ox > 0 && oy > 0 && oz > 0){
+          if(oy <= ox && oy <= oz){
+            // Y axis resolve
+            if((player.pos.y + player.height/2) > (by + 0.5)){
+              // player above block -> push up
+              player.pos.y += oy;
+              if(player.vel.y < 0) player.vel.y = 0;
+              supported = true;
+            } else {
+              // player below block -> push down
+              player.pos.y -= oy;
+              if(player.vel.y > 0) player.vel.y = 0;
+            }
+          } else if(ox <= oy && ox <= oz){
+            // X axis resolve
+            if(player.pos.x > bx) player.pos.x += ox; else player.pos.x -= ox;
+            player.vel.x = 0;
+          } else {
+            // Z axis resolve
+            if(player.pos.z > bz) player.pos.z += oz; else player.pos.z -= oz;
+            player.vel.z = 0;
+          }
+
+          // recompute bounds after resolution
+          minX = player.pos.x - halfW; maxX = player.pos.x + halfW;
+          minY = player.pos.y; maxY = player.pos.y + player.height;
+          minZ = player.pos.z - halfD; maxZ = player.pos.z + halfD;
+        }
+      }
+    }
+  }
+
+  onGround = supported && player.vel.y <= 1.0;
+}
+
+// movement & physics loop (with first-person camera)
+let prevTime = performance.now();
+function step(){
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - prevTime) / 1000);
+  prevTime = now;
+
+  // input vector
+  const iv = new THREE.Vector3();
+  if(keys['w']) iv.z -= 1;
+  if(keys['s']) iv.z += 1;
+  if(keys['a']) iv.x -= 1;
+  if(keys['d']) iv.x += 1;
+  if(joyState.active){ iv.x += joyState.dx; iv.z += -joyState.dy; }
+  if(iv.lengthSq() > 1) iv.normalize();
+
+  // rotate input by camera yaw
+  const yaw = look.yaw;
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw));
+  const move = new THREE.Vector3();
+  move.addScaledVector(forward, iv.z);
+  move.addScaledVector(right, iv.x);
+
+  // horizontal velocity
+  player.vel.x = move.x * player.speed;
+  player.vel.z = move.z * player.speed;
+
+  // gravity
+  player.vel.y -= 20 * dt;
+
+  // integrate (feet position)
+  player.pos.addScaledVector(player.vel, dt);
+
+  // collisions against blocks
+  resolveCollisions();
+
+  // fallback floor
+  if(player.pos.y < 0.2){
+    player.pos.y = 0.2;
+    player.vel.y = 0;
+    onGround = true;
+  }
+
+  // First-person camera at player's head
+  const eye = player.pos.clone().add(new THREE.Vector3(0, player.height, 0));
+  camera.position.copy(eye);
+  const camQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(look.pitch, look.yaw, 0, 'YXZ'));
+  camera.quaternion.copy(camQuat);
+
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.render(scene, camera);
+  requestAnimationFrame(step);
+}
+requestAnimationFrame(step);
+
+// save / load world (localStorage)
+function saveWorld(){ try { localStorage.setItem('minicraft_world', JSON.stringify(Array.from(blocks))); } catch(e){} }
+function loadWorld(){ try { const s = localStorage.getItem('minicraft_world'); if(s){ const arr = JSON.parse(s); for(let i=0;i<blocks.length && i<arr.length;i++) blocks[i] = arr[i]; rebuildMeshes(); } } catch(e){} }
+window.addEventListener('beforeunload', saveWorld);
+loadWorld();
+spawnPlayerOnCenter();
+
+// resize handling and FPS counter
+window.addEventListener('resize', ()=>{ camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+const fpsEl = document.getElementById('fps');
+let lastFPS = performance.now(), frames = 0;
+setInterval(()=>{ const now = performance.now(); fpsEl.textContent = Math.round(frames*1000/(now-lastFPS)) + ' fps'; frames = 0; lastFPS = now; }, 1000);
+(function tickFrames(){ frames++; requestAnimationFrame(tickFrames); })();
+
+// expose debug helpers
+window._minicraft = { blocks, WORLD, rebuildMeshes, saveWorld, loadWorld, digBlock, placeBlock, spawnPlayerOnTopAt, spawnPlayerOnCenter, player };
 
 </script>
 </body>
