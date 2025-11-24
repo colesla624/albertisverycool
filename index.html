@@ -1,59 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Minecraft-like Prototype with Joystick, Terrain, POV, Build</title>
+  <meta charset="UTF-8" />
+  <title>Minecraft-like Game with Joystick, Collisions, POV, Build</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
-    body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; }
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     canvas { display: block; }
 
-    /* UI */
+    /* Buttons */
     .btn {
-      position: absolute;
-      padding: 8px 12px;
-      background: rgba(20,20,20,0.6);
-      color: white;
-      border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 6px;
+      padding: 10px 14px;
+      background: rgba(30,30,30,0.65);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 8px;
       font-size: 14px;
       backdrop-filter: blur(4px);
       user-select: none;
       touch-action: manipulation;
     }
-    #povBtn { top: 12px; left: 12px; }
+    #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
 
+    /* Right-side action cluster: guaranteed on-screen */
     #uiRight {
       position: absolute;
-      right: 16px;
-      bottom: 120px;
+      right: 14px;
+      bottom: 140px;
       display: flex;
       flex-direction: column;
       gap: 12px;
+      z-index: 10;
     }
-    #jumpBtn { position: absolute; right: 16px; bottom: 16px; }
+    #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
     /* Joystick */
     #joystick {
       position: absolute;
-      bottom: 30px;
-      left: 30px;
-      width: 140px;
-      height: 140px;
+      bottom: 24px;
+      left: 24px;
+      width: 150px;
+      height: 150px;
       background: rgba(200,200,200,0.18);
       border: 2px solid rgba(255,255,255,0.25);
       border-radius: 50%;
       touch-action: none;
+      z-index: 10;
     }
     #stick {
       position: absolute;
-      width: 64px;
-      height: 64px;
-      background: rgba(100,100,100,0.6);
+      width: 68px;
+      height: 68px;
+      background: rgba(100,100,100,0.65);
       border: 2px solid rgba(255,255,255,0.3);
       border-radius: 50%;
-      left: 38px;
-      top: 38px;
+      left: 41px;
+      top: 41px;
       touch-action: none;
     }
 
@@ -62,37 +64,38 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 18px; height: 18px;
+      width: 20px; height: 20px;
       transform: translate(-50%, -50%);
       pointer-events: none;
+      z-index: 5;
     }
     #crosshair::before, #crosshair::after {
       content: "";
       position: absolute;
       background: rgba(255,255,255,0.9);
+      box-shadow: 0 0 2px rgba(0,0,0,0.4);
     }
-    #crosshair::before { width: 2px; height: 18px; left: 8px; top: 0; }
-    #crosshair::after { width: 18px; height: 2px; left: 0; top: 8px; }
+    #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
+    #crosshair::after { width: 20px; height: 2px; left: 0; top: 9px; }
   </style>
 </head>
 <body>
   <div id="crosshair"></div>
   <button id="povBtn" class="btn">POV: Third</button>
+
   <div id="uiRight">
     <button id="placeBtn" class="btn">Place</button>
     <button id="deleteBtn" class="btn">Delete</button>
   </div>
   <button id="jumpBtn" class="btn">Jump</button>
 
-  <div id="joystick">
-    <div id="stick"></div>
-  </div>
+  <div id="joystick"><div id="stick"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
   <script>
     // ------------------------------------------------------------
-    // Basic helpers: seeded noise for terrain
+    // Utilities: seeded 2D value noise for terrain
     // ------------------------------------------------------------
     function mulberry32(seed) {
       return function() {
@@ -102,18 +105,15 @@
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
       };
     }
-    // 2D value noise
     function makeNoise2D(seed = 12345) {
       const rand = mulberry32(seed);
       const perm = new Uint8Array(512);
       for (let i = 0; i < 256; i++) perm[i] = i;
-      // shuffle
       for (let i = 255; i > 0; i--) {
         const j = Math.floor(rand() * (i + 1));
         [perm[i], perm[j]] = [perm[j], perm[i]];
       }
       for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];
-
       function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
       function lerp(a, b, t) { return a + t * (b - a); }
       function grad(hash, x, y) {
@@ -138,12 +138,12 @@
     }
 
     // ------------------------------------------------------------
-    // THREE setup
+    // Three.js setup
     // ------------------------------------------------------------
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1200);
     camera.position.set(0, 6, 12);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -151,29 +151,26 @@
     document.body.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x889988, 0.7);
-    scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
     dir.position.set(20, 30, 10);
+    scene.add(hemi);
     scene.add(dir);
 
     // ------------------------------------------------------------
-    // Voxel world data
+    // Voxel world
     // ------------------------------------------------------------
     const BLOCK_SIZE = 1;
-    const WORLD_SIZE = 64; // width and depth
-    const MAX_HEIGHT = 14;
+    const WORLD_SIZE = 64;      // X/Z size
+    const MAX_HEIGHT = 16;      // max terrain height
+    const GROUND_FLOOR = 0;
 
-    // Materials
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-    const matStone = new THREE.MeshLambertMaterial({ color: 0x808080 });
+    const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
     const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-
-    // Store blocks in a Map keyed by "x,y,z" and keep refs to meshes for raycast/collision
-    const voxels = new Map();
-
-    function key(x, y, z) { return `${x},${y},${z}`; }
+    const voxels = new Map(); // key: "x,y,z" -> mesh
+    function key(x,y,z){ return `${x},${y},${z}`; }
 
     function addBlock(x, y, z, type = "grass") {
       const k = key(x, y, z);
@@ -181,37 +178,28 @@
       const mat = type === "stone" ? matStone : (type === "dirt" ? matDirt : matGrass);
       const mesh = new THREE.Mesh(blockGeo, mat);
       mesh.position.set(x + BLOCK_SIZE/2, y + BLOCK_SIZE/2, z + BLOCK_SIZE/2);
-      mesh.userData = { x, y, z, type: type };
+      mesh.userData = { x, y, z, solid: true, type };
       scene.add(mesh);
       voxels.set(k, mesh);
     }
-
     function removeBlock(x, y, z) {
       const k = key(x, y, z);
       const mesh = voxels.get(k);
       if (!mesh) return;
       scene.remove(mesh);
       mesh.geometry.dispose();
-      // Do not dispose material to reuse shared materials
       voxels.delete(k);
     }
 
-    // ------------------------------------------------------------
-    // Random terrain generation with noise
-    // ------------------------------------------------------------
+    // Terrain generation: layered noise -> heightmap
     const noise = makeNoise2D(1337);
     const SCALE = 0.08;
     for (let x = 0; x < WORLD_SIZE; x++) {
       for (let z = 0; z < WORLD_SIZE; z++) {
-        const nx = x * SCALE;
-        const nz = z * SCALE;
-        // combine low and mid frequency noise
-        const h =
-          (noise(nx, nz) * 0.7) +
-          (noise(nx * 0.5, nz * 0.5) * 0.3);
-        const height = Math.floor((h * 0.5 + 0.5) * MAX_HEIGHT); // normalize to [0,1], scale
-
-        for (let y = 0; y <= height; y++) {
+        const nx = x * SCALE, nz = z * SCALE;
+        const hVal = (noise(nx, nz) * 0.65) + (noise(nx * 0.45, nz * 0.45) * 0.35);
+        const height = Math.floor((hVal * 0.5 + 0.5) * MAX_HEIGHT);
+        for (let y = GROUND_FLOOR; y <= height; y++) {
           const type = y === height ? "grass" : (y > height - 3 ? "dirt" : "stone");
           addBlock(x, y, z, type);
         }
@@ -219,31 +207,33 @@
     }
 
     // ------------------------------------------------------------
-    // Player setup (AABB approximation)
+    // Player
     // ------------------------------------------------------------
     const playerGeo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
     const playerMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
     const player = new THREE.Mesh(playerGeo, playerMat);
-    player.position.set(WORLD_SIZE/2 + 0.5, 20, WORLD_SIZE/2 + 0.5);
+    player.position.set(WORLD_SIZE/2 + 0.5, MAX_HEIGHT + 8, WORLD_SIZE/2 + 0.5);
     scene.add(player);
 
     const playerVel = new THREE.Vector3(0, 0, 0);
-    const GRAVITY = 18;
-    const MOVE_SPEED = 4.0;
-    const JUMP_SPEED = 7.5;
+    const GRAVITY = 20;
+    const MOVE_SPEED = 4.5;
+    const JUMP_SPEED = 8.0;
     let onGround = false;
-
-    // POV: third or first
     let pov = "third";
+
+    // Bounding box half-sizes for player AABB
+    const PSX = 0.8, PSY = 1.6, PSZ = 0.8;
+    const HALF_X = PSX / 2, HALF_Y = PSY / 2, HALF_Z = PSZ / 2;
 
     // ------------------------------------------------------------
     // Joystick
     // ------------------------------------------------------------
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
-    let joyCenter = null;
     let joyVec = { x: 0, y: 0 };
-    const JOY_RADIUS = 52;
+    const JOY_RADIUS = 56;
+    let joyCenter = null;
 
     function recalcJoyCenter() {
       const rect = joystick.getBoundingClientRect();
@@ -253,27 +243,25 @@
     window.addEventListener('resize', recalcJoyCenter);
 
     function updateJoystick(e) {
-      const touch = e.touches[0];
-      const dx = touch.clientX - joyCenter.x;
-      const dy = touch.clientY - joyCenter.y;
+      const t = e.touches[0];
+      const dx = t.clientX - joyCenter.x;
+      const dy = t.clientY - joyCenter.y;
       const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
       const angle = Math.atan2(dy, dx);
       joyVec.x = Math.cos(angle) * (dist / JOY_RADIUS);
       joyVec.y = Math.sin(angle) * (dist / JOY_RADIUS);
-      stick.style.left = (38 + joyVec.x * JOY_RADIUS) + "px";
-      stick.style.top  = (38 + joyVec.y * JOY_RADIUS) + "px";
+      stick.style.left = (41 + joyVec.x * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + joyVec.y * JOY_RADIUS) + "px";
     }
-
     joystick.addEventListener("touchstart", updateJoystick, { passive: true });
     joystick.addEventListener("touchmove", updateJoystick, { passive: true });
     joystick.addEventListener("touchend", () => {
       joyVec.x = 0; joyVec.y = 0;
-      stick.style.left = "38px";
-      stick.style.top  = "38px";
+      stick.style.left = "41px"; stick.style.top = "41px";
     });
 
     // ------------------------------------------------------------
-    // Input buttons: POV, jump, place, delete
+    // Buttons: POV / Jump / Place / Delete
     // ------------------------------------------------------------
     const povBtn = document.getElementById("povBtn");
     const jumpBtn = document.getElementById("jumpBtn");
@@ -286,53 +274,40 @@
     });
 
     jumpBtn.addEventListener("click", () => {
-      if (onGround) {
-        playerVel.y = JUMP_SPEED;
-        onGround = false;
-      }
+      if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
     // ------------------------------------------------------------
-    // Raycasting utilities for block interaction
+    // Raycasting for block interactions
     // ------------------------------------------------------------
     const raycaster = new THREE.Raycaster();
-
-    function getCameraRayTarget() {
-      // center of screen
-      const mouse = new THREE.Vector2(0, 0);
-      raycaster.setFromCamera(mouse, camera);
-
-      // raycast against voxel meshes
+    function getCenterRayHit() {
+      const ndc = new THREE.Vector2(0, 0); // screen center
+      raycaster.setFromCamera(ndc, camera);
       const meshes = Array.from(voxels.values());
       const hits = raycaster.intersectObjects(meshes, false);
-      if (hits.length === 0) return null;
-      return hits[0]; // closest
+      return hits.length ? hits[0] : null;
     }
-
-    function placeBlockAtTarget() {
-      const hit = getCameraRayTarget();
+    function placeBlockAtAim() {
+      const hit = getCenterRayHit();
       if (!hit) return;
-      const normal = hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().setFromMatrix4(hit.object.matrixWorld));
-      // place block adjacent in the face normal direction (normalized to grid)
-      const gx = Math.floor(hit.point.x + normal.x * 0.5);
-      const gy = Math.floor(hit.point.y + normal.y * 0.5);
-      const gz = Math.floor(hit.point.z + normal.z * 0.5);
-      if (gx < 0 || gz < 0 || gx >= WORLD_SIZE || gz >= WORLD_SIZE || gy < 0 || gy > MAX_HEIGHT + 8) return;
+      const normalWorld = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const p = hit.point.clone().addScaledVector(normalWorld, 0.5);
+      const gx = Math.floor(p.x), gy = Math.floor(p.y), gz = Math.floor(p.z);
+      if (gx < 0 || gz < 0 || gx >= WORLD_SIZE || gz >= WORLD_SIZE || gy < 0 || gy > MAX_HEIGHT + 20) return;
       addBlock(gx, gy, gz, "grass");
     }
-
-    function deleteBlockAtTarget() {
-      const hit = getCameraRayTarget();
+    function deleteBlockAtAim() {
+      const hit = getCenterRayHit();
       if (!hit) return;
       const { x, y, z } = hit.object.userData;
       removeBlock(x, y, z);
     }
-
-    placeBtn.addEventListener("click", placeBlockAtTarget);
-    deleteBtn.addEventListener("click", deleteBlockAtTarget);
+    placeBtn.addEventListener("click", placeBlockAtAim);
+    deleteBtn.addEventListener("click", deleteBlockAtAim);
 
     // ------------------------------------------------------------
-    // Movement and collision
+    // Collision resolution (voxel AABB)
     // ------------------------------------------------------------
     function aabbIntersect(ax, ay, az, asx, asy, asz, bx, by, bz, bsx, bsy, bsz) {
       return Math.abs(ax - bx) * 2 < (asx + bsx) &&
@@ -341,75 +316,79 @@
     }
 
     function resolveCollisions() {
-      // Player AABB
-      const psx = 0.8, psy = 1.6, psz = 0.8;
+      // Player center
       const px = player.position.x;
       const py = player.position.y;
       const pz = player.position.z;
 
       onGround = false;
 
-      // Only check nearby blocks for efficiency
+      // Only test blocks around the player to keep it fast
       const minX = Math.floor(px - 1.5);
       const maxX = Math.floor(px + 1.5);
-      const minY = Math.floor(py - 1.0);
-      const maxY = Math.floor(py + 1.0);
+      const minY = Math.floor(py - 1.2);
+      const maxY = Math.floor(py + 1.2);
       const minZ = Math.floor(pz - 1.5);
       const maxZ = Math.floor(pz + 1.5);
 
       for (let x = minX; x <= maxX; x++) {
         for (let y = minY; y <= maxY; y++) {
           for (let z = minZ; z <= maxZ; z++) {
-            const k = key(x, y, z);
-            const mesh = voxels.get(k);
+            const mesh = voxels.get(key(x, y, z));
             if (!mesh) continue;
             const bx = mesh.position.x;
             const by = mesh.position.y;
             const bz = mesh.position.z;
-            const bs = BLOCK_SIZE;
+            const BS = BLOCK_SIZE;
 
-            if (aabbIntersect(px, py, pz, psx, psy, psz, bx, by, bz, bs, bs, bs)) {
-              // Compute penetration along each axis (simple separation)
-              const dx = (psx/2 + bs/2) - Math.abs(px - bx);
-              const dy = (psy/2 + bs/2) - Math.abs(py - by);
-              const dz = (psz/2 + bs/2) - Math.abs(pz - bz);
+            if (aabbIntersect(px, py, pz, PSX, PSY, PSZ, bx, by, bz, BS, BS, BS)) {
+              // Penetration along each axis
+              const penX = (HALF_X + BS/2) - Math.abs(px - bx);
+              const penY = (HALF_Y + BS/2) - Math.abs(py - by);
+              const penZ = (HALF_Z + BS/2) - Math.abs(pz - bz);
 
-              if (dx < dy && dx < dz) {
+              // Move out along smallest penetration axis
+              if (penX < penY && penX < penZ) {
                 const sign = (px < bx) ? -1 : 1;
-                player.position.x += sign * dx;
+                player.position.x += sign * penX;
                 playerVel.x = 0;
-              } else if (dy < dx && dy < dz) {
+              } else if (penY < penX && penY < penZ) {
                 const sign = (py < by) ? -1 : 1;
-                player.position.y += sign * dy;
-                if (sign < 0) {
-                  // collided from above -> standing on ground
+                player.position.y += sign * penY;
+                if (sign < 0) { // we were above the block and landed on it
                   onGround = true;
                 }
-                playerVel.y = Math.min(playerVel.y, 0);
+                if (sign > 0 && playerVel.y < 0) playerVel.y = 0; // prevent sinking
+                if (sign < 0 && playerVel.y > 0) playerVel.y = 0; // ceiling bump
               } else {
                 const sign = (pz < bz) ? -1 : 1;
-                player.position.z += sign * dz;
+                player.position.z += sign * penZ;
                 playerVel.z = 0;
               }
             }
           }
         }
       }
+
+      // World bounds and ground plane safety
+      player.position.x = Math.max(HALF_X, Math.min(WORLD_SIZE - HALF_X, player.position.x));
+      player.position.z = Math.max(HALF_Z, Math.min(WORLD_SIZE - HALF_Z, player.position.z));
+      if (player.position.y < HALF_Y) {
+        player.position.y = HALF_Y;
+        playerVel.y = 0;
+        onGround = true;
+      }
     }
 
     // ------------------------------------------------------------
-    // Camera follow logic (first-person / third-person)
+    // Camera update
     // ------------------------------------------------------------
-    function updateCamera(dt) {
-      const target = player.position.clone();
+    function updateCamera() {
+      const target = player.position;
       if (pov === "first") {
         camera.position.copy(target).add(new THREE.Vector3(0, 0.6, 0));
-        // Look direction derived from player forward; for now fixed forward
-        const forward = new THREE.Vector3(0, 0, -1);
-        const camTarget = target.clone().add(forward);
-        camera.lookAt(camTarget);
+        camera.lookAt(target.clone().add(new THREE.Vector3(0, 0.25, -1)));
       } else {
-        // third-person: behind and above the player
         const offset = new THREE.Vector3(0, 4, 8);
         camera.position.copy(target).add(offset);
         camera.lookAt(target);
@@ -417,24 +396,22 @@
     }
 
     // ------------------------------------------------------------
-    // Animate
+    // Main loop
     // ------------------------------------------------------------
-    let lastTime = performance.now();
+    const forward = new THREE.Vector3(0, 0, -1);
+    const right   = new THREE.Vector3(1, 0, 0);
 
+    let lastTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Apply gravity
+      // Gravity
       playerVel.y -= GRAVITY * dt;
 
-      // Movement from joystick
-      // Map joystick x->strafe, y->forward (Z- forward)
-      const forward = new THREE.Vector3(0, 0, -1);
-      const right = new THREE.Vector3(1, 0, 0);
-
+      // Movement from joystick (x = strafe, y = forward)
       const moveDir = new THREE.Vector3()
         .addScaledVector(right, joyVec.x)
         .addScaledVector(forward, joyVec.y);
@@ -448,20 +425,11 @@
       player.position.y += playerVel.y * dt;
       player.position.z += playerVel.z * dt;
 
-      // Resolve collisions with nearby voxels
+      // Collisions keep us above solid blocks
       resolveCollisions();
 
-      // Keep player within world bounds
-      player.position.x = Math.max(0.4, Math.min(WORLD_SIZE - 0.4, player.position.x));
-      player.position.z = Math.max(0.4, Math.min(WORLD_SIZE - 0.4, player.position.z));
-      // Hard floor at y=0
-      if (player.position.y < 0.8) {
-        player.position.y = 0.8;
-        playerVel.y = 0;
-        onGround = true;
-      }
-
-      updateCamera(dt);
+      // Render
+      updateCamera();
       renderer.render(scene, camera);
     }
     animate();
@@ -477,7 +445,7 @@
     });
 
     // ------------------------------------------------------------
-    // Optional: desktop fallbacks (WASD + space)
+    // Desktop fallback controls (WASD + Space)
     // ------------------------------------------------------------
     const keys = new Set();
     window.addEventListener('keydown', e => {
@@ -485,7 +453,6 @@
       if (e.code === "Space") jumpBtn.click();
     });
     window.addEventListener('keyup', e => keys.delete(e.code));
-
     function desktopControlsToJoystick() {
       let x = 0, y = 0;
       if (keys.has("KeyA")) x -= 1;
@@ -495,8 +462,8 @@
       const len = Math.hypot(x, y);
       if (len > 0) { x /= len; y /= len; }
       joyVec.x = x; joyVec.y = y;
-      stick.style.left = (38 + joyVec.x * JOY_RADIUS) + "px";
-      stick.style.top  = (38 + joyVec.y * JOY_RADIUS) + "px";
+      stick.style.left = (41 + joyVec.x * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + joyVec.y * JOY_RADIUS) + "px";
       requestAnimationFrame(desktopControlsToJoystick);
     }
     desktopControlsToJoystick();
