@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — Capsule, Solid Collisions, Drag Look, Build</title>
+  <title>Minecraft-like Game — No Bounce Capsule, Drag Look, Build</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     canvas { display: block; }
 
-    /* Buttons */
     .btn {
       padding: 10px 14px;
       background: rgba(30,30,30,0.65);
@@ -22,7 +21,6 @@
     }
     #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
 
-    /* Right-side cluster: always on screen */
     #uiRight {
       position: absolute;
       right: 14px;
@@ -34,7 +32,6 @@
     }
     #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
-    /* Joystick */
     #joystick {
       position: absolute;
       bottom: 24px;
@@ -58,7 +55,6 @@
       touch-action: none;
     }
 
-    /* Crosshair */
     #crosshair {
       position: absolute;
       top: 50%;
@@ -90,9 +86,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
-    // ------------------------------------------------------------
-    // Utilities: seeded 2D value noise for terrain
-    // ------------------------------------------------------------
+    // -------- Utilities: seeded 2D noise --------
     function mulberry32(seed) {
       return function() {
         let t = seed += 0x6D2B79F5;
@@ -133,9 +127,7 @@
       };
     }
 
-    // ------------------------------------------------------------
-    // Three.js setup
-    // ------------------------------------------------------------
+    // -------- Three.js setup --------
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
 
@@ -149,9 +141,7 @@
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    // ------------------------------------------------------------
-    // Voxel world
-    // ------------------------------------------------------------
+    // -------- Voxel world --------
     const BLOCK_SIZE = 1;
     const WORLD_SIZE = 64;
     const MAX_HEIGHT = 16;
@@ -161,8 +151,9 @@
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
     const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-    const voxels = new Map(); // "x,y,z" -> mesh
+    const voxels = new Map();
     function key(x,y,z){ return `${x},${y},${z}`; }
+    function isSolid(x,y,z){ return voxels.has(key(x,y,z)); }
 
     function addBlock(x, y, z, type = "grass") {
       const k = key(x, y, z);
@@ -170,7 +161,7 @@
       const mat = type === "stone" ? matStone : (type === "dirt" ? matDirt : matGrass);
       const mesh = new THREE.Mesh(blockGeo, mat);
       mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
-      mesh.userData = { x, y, z, type, solid: true };
+      mesh.userData = { x, y, z, type };
       scene.add(mesh);
       voxels.set(k, mesh);
     }
@@ -182,11 +173,7 @@
       mesh.geometry.dispose();
       voxels.delete(k);
     }
-    function isSolid(x, y, z) {
-      return voxels.has(key(x, y, z));
-    }
 
-    // Terrain generation
     const noise = makeNoise2D(1337);
     const SCALE = 0.08;
     for (let x = 0; x < WORLD_SIZE; x++) {
@@ -201,12 +188,10 @@
       }
     }
 
-    // ------------------------------------------------------------
-    // Player capsule
-    // ------------------------------------------------------------
+    // -------- Player capsule --------
     const capsuleRadius = 0.4;
-    const capsuleMid = 1.0;        // cylinder part height
-    const capsuleHeight = capsuleMid + 2*capsuleRadius; // total height
+    const capsuleMid = 1.0;
+    const capsuleHeight = capsuleMid + 2 * capsuleRadius;
     const capsuleGeo = new THREE.CapsuleGeometry(capsuleRadius, capsuleMid, 8, 16);
     const capsuleMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
     const player = new THREE.Mesh(capsuleGeo, capsuleMat);
@@ -220,13 +205,11 @@
     let onGround = false;
     let pov = "third";
 
-    // Facing (drag yaw/pitch)
+    // Facing via drag
     let yaw = 0;
-    let pitch = 0; // also used for third-person camera tilt
+    let pitch = 0;
 
-    // ------------------------------------------------------------
-    // Joystick (inverted forward/backward)
-    // ------------------------------------------------------------
+    // -------- Joystick (inverted forward/backward) --------
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
     let joyVec = { x: 0, y: 0 };
@@ -260,9 +243,7 @@
       stick.style.left = "41px"; stick.style.top = "41px";
     });
 
-    // ------------------------------------------------------------
-    // Drag rotation (exclude joystick area)
-    // ------------------------------------------------------------
+    // -------- Drag rotation (exclude joystick) --------
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
       if (e.target.closest("#joystick")) return;
@@ -285,9 +266,7 @@
 
     document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
 
-    // ------------------------------------------------------------
-    // Buttons: POV / Jump / Place / Delete
-    // ------------------------------------------------------------
+    // -------- Buttons --------
     const povBtn = document.getElementById("povBtn");
     const jumpBtn = document.getElementById("jumpBtn");
     const placeBtn = document.getElementById("placeBtn");
@@ -302,12 +281,10 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    // ------------------------------------------------------------
-    // Raycasting for block interactions
-    // ------------------------------------------------------------
+    // -------- Raycasting for build --------
     const raycaster = new THREE.Raycaster();
     function getCenterRayHit() {
-      const ndc = new THREE.Vector2(0, 0); // screen center
+      const ndc = new THREE.Vector2(0, 0);
       raycaster.setFromCamera(ndc, camera);
       const meshes = Array.from(voxels.values());
       const hits = raycaster.intersectObjects(meshes, false);
@@ -331,10 +308,7 @@
     placeBtn.addEventListener("click", placeBlockAtAim);
     deleteBtn.addEventListener("click", deleteBlockAtAim);
 
-    // ------------------------------------------------------------
-    // Collision helpers (capsule vs voxels, no bounce)
-    // ------------------------------------------------------------
-    // We resolve movement axis-by-axis (Y then X then Z), and snap to block tops when falling.
+    // -------- Movement helpers --------
     function getFacingVectors() {
       const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
       const forward = new THREE.Vector3(-sinY, 0, -cosY).normalize();
@@ -342,35 +316,31 @@
       return { forward, right };
     }
 
+    // Stable ground snap (no bounce): snap only when falling into ground
     function groundSnapAndDetect(dt) {
-      // Predict next Y
       let nextY = player.position.y + playerVel.y * dt;
+      const footY = nextY - capsuleHeight / 2;
 
-      // Bottom of capsule center
-      const footCenterY = nextY - capsuleHeight / 2;
       const px = player.position.x;
       const pz = player.position.z;
 
-      // Check the blocks directly under the capsule within radius
       const minX = Math.floor(px - capsuleRadius);
       const maxX = Math.floor(px + capsuleRadius);
       const minZ = Math.floor(pz - capsuleRadius);
       const maxZ = Math.floor(pz + capsuleRadius);
 
       let highestGround = -Infinity;
+      const probeY = Math.floor(footY - 0.05);
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
-          const gy = Math.floor(footCenterY - 0.05); // slightly below foot
-          if (isSolid(x, gy, z)) {
-            highestGround = Math.max(highestGround, gy + 1); // block top surface
+          if (isSolid(x, probeY, z)) {
+            highestGround = Math.max(highestGround, probeY + 1);
           }
         }
       }
 
-      // Snap onto ground if falling into it
       if (highestGround !== -Infinity && playerVel.y <= 0) {
-        const desiredFootY = highestGround + capsuleRadius; // foot center sits capsuleRadius above block top
-        const desiredPlayerY = desiredFootY + capsuleHeight / 2;
+        const desiredPlayerY = highestGround + capsuleHeight / 2;
         if (nextY < desiredPlayerY) {
           player.position.y = desiredPlayerY;
           playerVel.y = 0;
@@ -379,20 +349,19 @@
         }
       }
 
-      // Otherwise, apply vertical motion
       player.position.y = nextY;
       onGround = false;
     }
 
+    // Horizontal separation against blocks (capsule footprint)
     function horizontalResolve(axis) {
-      // Axis: 'x' or 'z'. Move along axis, push out from blocks if overlapping.
       const radius = capsuleRadius;
       const halfH = capsuleHeight / 2;
       const centerY = player.position.y;
 
-      // After moving, check nearby blocks and separate
       const px = player.position.x;
       const pz = player.position.z;
+
       const minX = Math.floor(px - radius - 1);
       const maxX = Math.floor(px + radius + 1);
       const minY = Math.floor(centerY - halfH);
@@ -404,15 +373,13 @@
         for (let y = minY; y <= maxY; y++) {
           for (let z = minZ; z <= maxZ; z++) {
             if (!isSolid(x, y, z)) continue;
-            // Block center and AABB
             const bx = x + 0.5, by = y + 0.5, bz = z + 0.5;
             const dx = px - bx;
             const dz = pz - bz;
-            const dy = Math.max(0, Math.abs(centerY - by) - 0.5); // vertical separation
+            const vertGap = Math.max(0, Math.abs(centerY - by) - 0.5);
             const horizDist = Math.hypot(dx, dz);
 
-            // If vertically overlapping the block slab and horizontally too close, separate horizontally
-            if (dy < halfH && horizDist < radius + 0.5) {
+            if (vertGap < halfH && horizDist < radius + 0.5) {
               const overlap = (radius + 0.5) - horizDist;
               if (overlap > 0) {
                 const nx = dx / (horizDist || 1e-6);
@@ -426,11 +393,9 @@
       }
     }
 
-    // ------------------------------------------------------------
-    // Camera update (first-person and third-person with pitch tilt)
-    // ------------------------------------------------------------
+    // -------- Camera update (first-person and third-person with pitch tilt) --------
     function updateCamera() {
-      const { forward, right } = getFacingVectors();
+      const { forward } = getFacingVectors();
       const target = player.position.clone();
 
       if (pov === "first") {
@@ -439,20 +404,17 @@
         camera.position.copy(eye);
         camera.lookAt(eye.clone().add(lookDir));
       } else {
-        // Third-person: orbit back/above with pitch tilt
         const back = forward.clone().multiplyScalar(-1);
         const upTilt = Math.sin(pitch);
         const camPos = target.clone()
-          .add(new THREE.Vector3(0, 2.5 + 2.0 * (upTilt > 0 ? upTilt : 0), 0)) // tilt up adds height
-          .add(back.multiplyScalar(8 - 2.0 * (upTilt < 0 ? -upTilt : 0)));     // tilt down moves closer
+          .add(new THREE.Vector3(0, 2.5 + 2.0 * (upTilt > 0 ? upTilt : 0), 0))
+          .add(back.multiplyScalar(8 - 2.0 * (upTilt < 0 ? -upTilt : 0)));
         camera.position.copy(camPos);
         camera.lookAt(target.clone().add(new THREE.Vector3(0, 1.4, 0)));
       }
     }
 
-    // ------------------------------------------------------------
-    // Main loop
-    // ------------------------------------------------------------
+    // -------- Main loop --------
     let lastTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
@@ -460,10 +422,8 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Gravity
       playerVel.y -= GRAVITY * dt;
 
-      // Movement (inverted Y already applied in joyVec)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(right, joyVec.x)
@@ -473,17 +433,17 @@
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
-      // 1) Vertical: snap to ground if falling into it (prevents bounce)
+      // Vertical: stable snap (no bounce)
       groundSnapAndDetect(dt);
 
-      // 2) Horizontal X then Z with separation (prevents clipping)
+      // Horizontal X then Z with separation
       player.position.x += vx * dt;
       horizontalResolve('x');
 
       player.position.z += vz * dt;
       horizontalResolve('z');
 
-      // World bounds
+      // Bounds safety
       player.position.x = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.x));
       player.position.z = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.z));
       if (player.position.y < capsuleHeight / 2) {
@@ -497,9 +457,7 @@
     }
     animate();
 
-    // ------------------------------------------------------------
-    // Resize
-    // ------------------------------------------------------------
+    // -------- Resize --------
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -507,16 +465,13 @@
       recalcJoyCenter();
     });
 
-    // ------------------------------------------------------------
-    // Desktop fallbacks (WASD + Space) mirroring joystick inversion
-    // ------------------------------------------------------------
+    // -------- Desktop fallbacks (WASD + Space) mirrored inversion --------
     const keys = new Set();
     window.addEventListener('keydown', e => {
       keys.add(e.code);
       if (e.code === "Space") jumpBtn.click();
     });
     window.addEventListener('keyup', e => keys.delete(e.code));
-
     function desktopControlsToJoystick() {
       let x = 0, y = 0;
       if (keys.has("KeyA")) x -= 1;
@@ -526,7 +481,6 @@
       const len = Math.hypot(x, y);
       if (len > 0) { x /= len; y /= len; }
       joyVec.x = x; joyVec.y = y;
-
       stick.style.left = (41 + x * JOY_RADIUS) + "px";
       stick.style.top  = (41 + (-y) * JOY_RADIUS) + "px";
       requestAnimationFrame(desktopControlsToJoystick);
