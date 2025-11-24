@@ -126,4 +126,5 @@ const player = { pos: new THREE.Vector3(0,7,0), vel: new THREE.Vector3(0,0,0), s
 let onGround = false;
 
 function worldToGrid(v){ return { x: Math.floor(v.x + WORLD.sizeX/2 + 0.0001), y: Math.floor(v.y + 0.0001), z: Math.floor(v.z + WORLD.sizeZ/2 + 0.0001) }; }
-function gridToWorld(gx,gy,gz){ return new THREE.Vector3(gx - WORLD.sizeX/2, gy,
+function gridToWorld(gx,gy,gz){ return new THREE.Vector3(gx - WORLD.sizeX/2, gy, gz - WORLD.sizeZ/2); }
+function inWorld(x,y,z){ return x>=0 && y>=0 && z>=0 && x < WORLD.sizeX
