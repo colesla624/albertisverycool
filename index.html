@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — Chunked Loading, Smooth Capsule, Drag Look</title>
+  <title>Minecraft-like Game — 10x10 Chunks</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -144,10 +144,10 @@
     scene.add(hemi); scene.add(dir);
 
     // ---------- World and chunks ----------
-    const WORLD_SIZE = 256;     // logical world extent
+    const WORLD_SIZE = 200;     // logical world extent
     const MAX_HEIGHT = 20;
-    const CHUNK_SIZE = 16;      // chunk dimensions (x,z)
-    const VIEW_RADIUS = 3;      // chunks radius to load around player
+    const CHUNK_SIZE = 10;      // 10x10 blocks per chunk (x,z)
+    const VIEW_RADIUS = 4;      // chunk radius around player to keep loaded
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
@@ -177,7 +177,7 @@
     }
 
     // Chunks: load/unload visible groups
-    const chunks = new Map(); // key "cx,cz" -> { group, meshCount }
+    const chunks = new Map(); // key "cx,cz" -> { group, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
 
     function buildChunkMesh(cx, cz) {
@@ -233,10 +233,13 @@
     function updateVisibleChunks(px, pz) {
       const cx = Math.floor(px / CHUNK_SIZE);
       const cz = Math.floor(pz / CHUNK_SIZE);
+      const maxCx = Math.ceil(WORLD_SIZE / CHUNK_SIZE) - 1;
+      const maxCz = Math.ceil(WORLD_SIZE / CHUNK_SIZE) - 1;
+
       for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
         for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
           const ncx = cx + dx, ncz = cz + dz;
-          if (ncx < 0 || ncz < 0 || ncx >= Math.ceil(WORLD_SIZE/CHUNK_SIZE) || ncz >= Math.ceil(WORLD_SIZE/CHUNK_SIZE)) continue;
+          if (ncx < 0 || ncz < 0 || ncx > maxCx || ncz > maxCz) continue;
           loadChunk(ncx, ncz);
         }
       }
@@ -249,9 +252,8 @@
       const cz = Math.floor(z / CHUNK_SIZE);
       const ck = chunkKey(cx, cz);
       const cur = chunks.get(ck);
-      if (!cur) return; // chunk not visible: no need now; it will be built when visible
+      if (!cur) return; // chunk not visible: no need now
 
-      // Remove old group and rebuild
       if (cur.group) scene.remove(cur.group);
       const rebuilt = buildChunkMesh(cx, cz);
       if (rebuilt.count > 0) {
@@ -361,7 +363,7 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    // ---------- Raycasting: against currently visible chunk meshes ----------
+    // ---------- Raycasting: only visible chunk meshes ----------
     const raycaster = new THREE.Raycaster();
     function getCenterRayHit() {
       const ndc = new THREE.Vector2(0, 0);
@@ -507,7 +509,7 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Load/unload visible chunks around player
+      // Load/unload visible 10x10 chunks around player
       updateVisibleChunks(player.position.x, player.position.z);
 
       // Gravity
