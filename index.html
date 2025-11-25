@@ -2,27 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like — Full build (rotation-based joystick, instanced chunks, performance panel, minimap, ray build/delete)</title>
+  <title>Minecraft-like — Full build (rotation-based joystick, instanced chunks, minimap, performance panel, ray place/delete)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
-    /* ----------------------------------------------------------------------------------------------
-       Base styles and layout
-    ---------------------------------------------------------------------------------------------- */
-    :root {
-      color-scheme: dark;
-    }
+    :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       overflow: hidden;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
       background: #0b1b2b;
+      color: #e6f3ff;
     }
     canvas { display: block; }
 
-    /* ----------------------------------------------------------------------------------------------
-       Buttons and UI
-    ---------------------------------------------------------------------------------------------- */
+    /* Buttons and UI */
     .btn {
       padding: 10px 14px;
       background: rgba(30,30,30,0.65);
@@ -49,6 +43,7 @@
     }
     #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
+    /* Crosshair */
     #crosshair {
       position: absolute;
       top: 50%;
@@ -66,11 +61,9 @@
       box-shadow: 0 0 2px rgba(0,0,0,0.4);
     }
     #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
-    #crosshair::after { width: 20px; height: 2px; left: 0; top: 9px; }
+    #crosshair::after  { width: 20px; height: 2px; left: 0; top: 9px; }
 
-    /* ----------------------------------------------------------------------------------------------
-       Joystick
-    ---------------------------------------------------------------------------------------------- */
+    /* Joystick */
     #joystick {
       position: absolute;
       bottom: 24px;
@@ -94,9 +87,7 @@
       touch-action: none;
     }
 
-    /* ----------------------------------------------------------------------------------------------
-       HUD
-    ---------------------------------------------------------------------------------------------- */
+    /* HUD */
     #hud {
       position: absolute;
       top: 12px;
@@ -113,29 +104,17 @@
       font-size: 12px;
       backdrop-filter: blur(4px);
     }
-    #hud label {
-      color: #a8d0ff;
-      opacity: 0.9;
-    }
-    #hud .value {
-      font-weight: 600;
-      color: #fff;
-      min-width: 60px;
-      text-align: right;
-    }
-    #hud .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    }
+    #hud label { color: #a8d0ff; opacity: 0.9; }
+    #hud .value { font-weight: 600; color: #fff; min-width: 60px; text-align: right; }
+    #hud .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    /* ----------------------------------------------------------------------------------------------
-       Settings panel
-    ---------------------------------------------------------------------------------------------- */
+    /* Settings panel */
     #panel {
       position: absolute;
       left: 12px;
       bottom: 200px;
       z-index: 10;
-      width: 280px;
+      width: 300px;
       max-width: calc(100vw - 24px);
       background: rgba(10, 18, 28, 0.65);
       color: #e6f3ff;
@@ -156,19 +135,17 @@
       gap: 8px;
       margin: 6px 0;
     }
-    #panel input[type="range"] { width: 140px; }
+    #panel input[type="range"] { width: 160px; }
     #panel .small { font-size: 12px; opacity: 0.9; }
     #panel .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    /* ----------------------------------------------------------------------------------------------
-       Minimap
-    ---------------------------------------------------------------------------------------------- */
+    /* Minimap */
     #minimap {
       position: absolute;
       right: 14px;
       top: 70px;
-      width: 160px;
-      height: 160px;
+      width: 180px;
+      height: 180px;
       z-index: 10;
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255,255,255,0.25);
@@ -185,9 +162,7 @@
       border-radius: 8px;
     }
 
-    /* ----------------------------------------------------------------------------------------------
-       Tooltip
-    ---------------------------------------------------------------------------------------------- */
+    /* Tip */
     .tip {
       position: absolute;
       left: 50%;
@@ -232,23 +207,23 @@
     <h3>Performance settings</h3>
     <div class="row">
       <span class="small">View radius (chunks)</span>
-      <input type="range" id="viewRadiusSlider" min="2" max="8" step="1" value="4"/>
-      <span id="viewRadiusLabel" class="mono small">4</span>
+      <input type="range" id="viewRadiusSlider" min="2" max="10" step="1" value="5"/>
+      <span id="viewRadiusLabel" class="mono small">5</span>
     </div>
     <div class="row">
       <span class="small">Chunk size (blocks)</span>
-      <input type="range" id="chunkSizeSlider" min="8" max="24" step="1" value="10"/>
-      <span id="chunkSizeLabel" class="mono small">10</span>
+      <input type="range" id="chunkSizeSlider" min="8" max="24" step="1" value="12"/>
+      <span id="chunkSizeLabel" class="mono small">12</span>
     </div>
     <div class="row">
       <span class="small">Max height</span>
-      <input type="range" id="heightSlider" min="12" max="40" step="1" value="20"/>
-      <span id="heightLabel" class="mono small">20</span>
+      <input type="range" id="heightSlider" min="12" max="40" step="1" value="22"/>
+      <span id="heightLabel" class="mono small">22</span>
     </div>
     <div class="row">
       <span class="small">Fog distance</span>
-      <input type="range" id="fogSlider" min="200" max="900" step="50" value="600"/>
-      <span id="fogLabel" class="mono small">600</span>
+      <input type="range" id="fogSlider" min="200" max="1200" step="50" value="700"/>
+      <span id="fogLabel" class="mono small">700</span>
     </div>
     <div class="row">
       <span class="small">Antialias</span>
@@ -264,15 +239,13 @@
     </div>
   </div>
 
-  <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
+  <div id="minimap"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
 
-  <div class="tip">Tip: Double-click the game to enable mouse look. Use the left joystick to move, drag anywhere else to rotate.</div>
+  <div class="tip">Double-click the game to enable mouse look. Use the left joystick to move, drag anywhere else to rotate.</div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
-    /* =================================================================================================
-       Utilities: seeded 2D noise, math helpers
-    =================================================================================================== */
+    /* Utilities: seeded noise */
     function mulberry32(seed) {
       return function() {
         let t = seed += 0x6D2B79F5;
@@ -281,7 +254,6 @@
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
       };
     }
-
     function makeNoise2D(seed = 1337) {
       const rand = mulberry32(seed);
       const perm = new Uint8Array(512);
@@ -312,34 +284,28 @@
         return lerp(lerp(grad(aa,x,y),grad(ba,x-1,y),u), lerp(grad(ab,x,y-1),grad(bb,x-1,y-1),u), v);
       };
     }
-
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-    function lerp(a, b, t) { return a + (b - a) * t; }
 
-    /* =================================================================================================
-       Scene setup
-    =================================================================================================== */
+    /* Scene setup */
     let ANTIALIAS = true;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
 
-    let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1200);
+    let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1600);
     let renderer = new THREE.WebGLRenderer({ antialias: ANTIALIAS, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x889988, 0.7);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.0); // default off (toggle in panel)
+    const dir = new THREE.DirectionalLight(0xffffff, 0.0); // toggle shadows later
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    /* =================================================================================================
-       Global parameters and materials
-    =================================================================================================== */
-    let WORLD_SIZE = 256;
-    let MAX_HEIGHT = 20;
-    let CHUNK_SIZE = 10;      // blocks per chunk (x,z)
-    let VIEW_RADIUS = 4;      // chunks radius to load around player
+    /* Params and materials */
+    let WORLD_SIZE = 320;
+    let MAX_HEIGHT = 22;
+    let CHUNK_SIZE = 12;
+    let VIEW_RADIUS = 5;
     let SEED = 1337;
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -347,13 +313,11 @@
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    /* =================================================================================================
-       World data and generation (sparse map)
-    =================================================================================================== */
+    /* World data */
     let noise = makeNoise2D(SEED);
     let SCALE = 0.06;
 
-    const world = new Map(); // key "x,y,z" -> type
+    const world = new Map(); // "x,y,z" -> type
     function K(x,y,z){ return `${x},${y},${z}`; }
     function getBlock(x,y,z){ return world.get(K(x,y,z)); }
     function setBlock(x,y,z,type){ world.set(K(x,y,z), type); }
@@ -373,23 +337,19 @@
         }
       }
     }
-
     generateTerrain();
 
-    /* =================================================================================================
-       Chunk rendering with InstancedMesh (low draw calls), load/unload window
-    =================================================================================================== */
-    const chunks = new Map(); // key "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
+    /* Chunks with InstancedMesh */
+    const chunks = new Map(); // "cx,cz" -> { group, meshes:{grass,dirt,stone}, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
-
     const matrixTemp = new THREE.Matrix4();
+
     function buildChunkInstanced(cx, cz) {
       const group = new THREE.Group();
       const startX = cx * CHUNK_SIZE;
       const startZ = cz * CHUNK_SIZE;
 
       const grass = [], dirt = [], stone = [];
-
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           const wx = startX + lx;
@@ -455,7 +415,7 @@
     }
 
     let lastChunkUpdate = 0;
-    const CHUNK_UPDATE_INTERVAL_MS = 120; // throttle chunk updates for smoother movement
+    const CHUNK_UPDATE_INTERVAL_MS = 120; // throttle chunk updates
 
     function updateVisibleChunks(px, pz, nowMs) {
       if (nowMs - lastChunkUpdate < CHUNK_UPDATE_INTERVAL_MS) return;
@@ -481,7 +441,7 @@
       const cz = Math.floor(z / CHUNK_SIZE);
       const ck = chunkKey(cx, cz);
       const cur = chunks.get(ck);
-      if (!cur) return; // not visible now
+      if (!cur) return;
 
       if (cur.group) scene.remove(cur.group);
       const rebuilt = buildChunkInstanced(cx, cz);
@@ -494,9 +454,7 @@
       updateHudChunkStats();
     }
 
-    /* =================================================================================================
-       Player, capsule collider, movement, collisions
-    =================================================================================================== */
+    /* Player and collisions */
     const capsuleRadius = 0.4;
     const capsuleMid = 1.0;
     const capsuleHeight = capsuleMid + 2 * capsuleRadius;
@@ -511,8 +469,8 @@
 
     const playerVel = new THREE.Vector3(0, 0, 0);
     const GRAVITY = 22;
-    const MOVE_SPEED = 5.8;
-    const JUMP_SPEED = 9.4;
+    const MOVE_SPEED = 6.0;
+    const JUMP_SPEED = 9.6;
     let onGround = false;
     let pov = "third";
     let yaw = 0;
@@ -600,9 +558,7 @@
       }
     }
 
-    /* =================================================================================================
-       Joystick: rotation-based movement (forward/back/strafe aligned to yaw)
-    =================================================================================================== */
+    /* Joystick: rotation-based movement (up=forward, down=back, left/right=strafe) */
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
     let joyInput = { x: 0, y: 0 };
@@ -620,30 +576,27 @@
       const t = e.touches[0];
       const dx = t.clientX - joyCenter.x;
       const dy = t.clientY - joyCenter.y;
-      const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
-      const angle = Math.atan2(dy, dx);
 
-      const rawX = Math.cos(angle) * (dist / JOY_RADIUS);
-      const rawY = Math.sin(angle) * (dist / JOY_RADIUS);
+      // Normalize to [-1, 1] and clamp
+      const nx = clamp(dx / JOY_RADIUS, -1, 1);
+      const ny = clamp(dy / JOY_RADIUS, -1, 1);
 
-      // Map: rawY up is negative screen Y => forward; rawX is left/right strafe
-      joyInput.x = rawX;     // left/right
-      joyInput.y = -rawY;    // forward/back
+      // Movement mapping: screen up (ny<0) -> forward (+y)
+      joyInput.x = nx;       // strafe left/right
+      joyInput.y = -ny;      // forward/back
 
-      // Move the visual stick in screen space
-      stick.style.left = (41 + rawX * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + rawY * JOY_RADIUS) + "px";
+      // Visual stick follows finger
+      stick.style.left = (41 + nx * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + ny * JOY_RADIUS) + "px";
     }
     joystick.addEventListener("touchstart", updateJoystick, { passive: true });
-    joystick.addEventListener("touchmove", updateJoystick, { passive: true });
+    joystick.addEventListener("touchmove",  updateJoystick, { passive: true });
     joystick.addEventListener("touchend", () => {
       joyInput.x = 0; joyInput.y = 0;
       stick.style.left = "41px"; stick.style.top = "41px";
     });
 
-    /* =================================================================================================
-       Drag rotation (touch)
-    =================================================================================================== */
+    /* Touch drag rotation (exclude joystick) */
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
       if (e.target.closest("#joystick")) return;
@@ -658,7 +611,7 @@
       const ty = e.touches[0].clientY;
       const dx = tx - lastX;
       const dy = ty - lastY;
-      yaw -= dx * 0.005;
+      yaw   -= dx * 0.005;
       pitch -= dy * 0.005;
       pitch = clamp(pitch, -Math.PI/3, Math.PI/3);
       lastX = tx; lastY = ty;
@@ -666,9 +619,7 @@
 
     document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
 
-    /* =================================================================================================
-       Buttons: POV toggle, Jump, Place/Delete, Reseed
-    =================================================================================================== */
+    /* Buttons */
     const povBtn    = document.getElementById("povBtn");
     const jumpBtn   = document.getElementById("jumpBtn");
     const placeBtn  = document.getElementById("placeBtn");
@@ -684,8 +635,8 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
+    /* Raycast for place/delete */
     const raycaster = new THREE.Raycaster();
-
     function collectVisibleInstanced() {
       const arr = [];
       for (const { meshes } of chunks.values()) {
@@ -696,14 +647,12 @@
       }
       return arr;
     }
-
     function getCenterRayHit() {
       const ndc = new THREE.Vector2(0, 0);
       raycaster.setFromCamera(ndc, camera);
       const hits = raycaster.intersectObjects(collectVisibleInstanced(), false);
       return hits.length ? hits[0] : null;
     }
-
     placeBtn.addEventListener("click", () => {
       const hit = getCenterRayHit();
       if (!hit) return;
@@ -714,23 +663,20 @@
       setBlock(x,y,z,"grass");
       rebuildChunkAtBlock(x,y,z);
     });
-
     deleteBtn.addEventListener("click", () => {
       const hit = getCenterRayHit();
       if (!hit) return;
-      // Approximate delete at rounded hit point (instanced mesh lacks per-instance identity)
       const x = Math.floor(hit.point.x);
       const y = Math.floor(hit.point.y);
       const z = Math.floor(hit.point.z);
       clearBlock(x,y,z);
       rebuildChunkAtBlock(x,y,z);
     });
-
     reseedBtn.addEventListener("click", () => {
       SEED = Math.floor(Math.random() * 1e9);
       noise = makeNoise2D(SEED);
       generateTerrain();
-      // Rebuild all currently loaded chunks
+      // Rebuild all currently loaded
       const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
       for (const [cx, cz] of loaded) {
         const ck = chunkKey(cx, cz);
@@ -741,9 +687,7 @@
       }
     });
 
-    /* =================================================================================================
-       Camera update with smoothing, fog control
-    =================================================================================================== */
+    /* Camera (first/third with smoothing) */
     const camPos = new THREE.Vector3();
     const camTarget = new THREE.Vector3();
     let CAM_LERP = 0.18;
@@ -756,7 +700,7 @@
         camPos.copy(eye);
         camTarget.copy(eye).add(look);
       } else {
-        const d = 8.2;
+        const d = 8.4;
         const offX = Math.sin(yaw) * Math.cos(pitch) * d;
         const offZ = Math.cos(yaw) * Math.cos(pitch) * d;
         const offY = Math.sin(pitch) * d * 0.6;
@@ -768,18 +712,14 @@
       camera.lookAt(camTarget);
     }
 
+    /* Fog */
     function updateFog(distance) {
-      if (distance > 0) {
-        scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
-      } else {
-        scene.fog = null;
-      }
+      if (distance > 0) scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
+      else scene.fog = null;
     }
-    updateFog(600);
+    updateFog(700);
 
-    /* =================================================================================================
-       HUD, stats, minimap
-    =================================================================================================== */
+    /* HUD and minimap */
     const fpsEl = document.getElementById("fps");
     const drawCallsEl = document.getElementById("drawCalls");
     const blocksVisibleEl = document.getElementById("blocksVisible");
@@ -799,7 +739,7 @@
       }
       chunksLoadedEl.textContent = count.toString();
       blocksVisibleEl.textContent = blocksVisible.toString();
-      drawCallsEl.textContent = (count * 3).toString(); // 3 instanced meshes per chunk
+      drawCallsEl.textContent = (count * 3).toString(); // grass/dirt/stone
     }
 
     let fpsAvg = 0;
@@ -830,7 +770,7 @@
       mmCtx.strokeStyle = "rgba(255,255,255,0.25)";
       mmCtx.strokeRect(0,0,minimapCanvas.width,minimapCanvas.height);
 
-      // Draw chunk squares
+      // Chunk tiles
       mmCtx.fillStyle = "rgba(90,160,255,0.20)";
       for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
         for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
@@ -840,7 +780,7 @@
         }
       }
 
-      // Player marker
+      // Player marker and direction
       mmCtx.fillStyle = "#ff4444";
       const px = (player.position.x - (cx - VIEW_RADIUS) * CHUNK_SIZE) * scale;
       const pz = (player.position.z - (cz - VIEW_RADIUS) * CHUNK_SIZE) * scale;
@@ -848,17 +788,14 @@
       mmCtx.arc(px, pz, 3, 0, Math.PI*2);
       mmCtx.fill();
 
-      // Direction arrow
       mmCtx.strokeStyle = "#ff4444";
       mmCtx.beginPath();
       mmCtx.moveTo(px, pz);
-      mmCtx.lineTo(px + Math.sin(-yaw) * 10, pz + Math.cos(-yaw) * 10);
+      mmCtx.lineTo(px + Math.sin(-yaw) * 12, pz + Math.cos(-yaw) * 12);
       mmCtx.stroke();
     }
 
-    /* =================================================================================================
-       Settings panel bindings
-    =================================================================================================== */
+    /* Settings bindings */
     const viewRadiusSlider = document.getElementById("viewRadiusSlider");
     const viewRadiusLabel  = document.getElementById("viewRadiusLabel");
     const chunkSizeSlider  = document.getElementById("chunkSizeSlider");
@@ -873,7 +810,7 @@
     viewRadiusSlider.addEventListener("input", () => {
       VIEW_RADIUS = parseInt(viewRadiusSlider.value, 10);
       viewRadiusLabel.textContent = VIEW_RADIUS.toString();
-      lastChunkUpdate = 0; // force chunk window refresh
+      lastChunkUpdate = 0;
     });
 
     chunkSizeSlider.addEventListener("input", () => {
@@ -881,7 +818,6 @@
       chunkSizeLabel.textContent = newSize.toString();
       if (newSize !== CHUNK_SIZE) {
         CHUNK_SIZE = newSize;
-        // Clear loaded chunks; they'll reload on next updateVisibleChunks
         for (const [ck, data] of chunks) {
           if (data.group) scene.remove(data.group);
           chunks.delete(ck);
@@ -895,7 +831,6 @@
       heightLabel.textContent = newH.toString();
       MAX_HEIGHT = newH;
       generateTerrain();
-      // Rebuild currently loaded chunks
       const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
       for (const [cx, cz] of loaded) {
         const ck = chunkKey(cx, cz);
@@ -916,15 +851,12 @@
       ANTIALIAS = aaToggle.checked;
       // Recreate renderer
       renderer.dispose();
-      const canvasOld = renderer.domElement;
-      canvasOld.parentNode.removeChild(canvasOld);
-
+      const old = renderer.domElement;
+      old.parentNode.removeChild(old);
       const newRenderer = new THREE.WebGLRenderer({ antialias: ANTIALIAS, powerPreference: "high-performance" });
       newRenderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(newRenderer.domElement);
-
       renderer = newRenderer;
-      // Re-bind pointer lock mousemove below (listener uses renderer.domElement)
       bindPointerLockMouseMove();
     });
 
@@ -938,16 +870,14 @@
         if (!data.meshes) continue;
         for (const mesh of [data.meshes.grass, data.meshes.dirt, data.meshes.stone]) {
           if (mesh) {
-            mesh.castShadow = false; // keep off to reduce cost
+            mesh.castShadow = false; // keep off for perf
             mesh.receiveShadow = enable;
           }
         }
       }
     });
 
-    /* =================================================================================================
-       Desktop controls and pointer lock
-    =================================================================================================== */
+    /* Desktop controls + pointer lock */
     const keys = new Set();
     window.addEventListener('keydown', e => {
       keys.add(e.code);
@@ -977,7 +907,7 @@
         if (!pointerLockEnabled) return;
         const dx = e.movementX || 0;
         const dy = e.movementY || 0;
-        yaw -= dx * 0.0025;
+        yaw   -= dx * 0.0025;
         pitch -= dy * 0.0025;
         pitch = clamp(pitch, -Math.PI/3, Math.PI/3);
       });
@@ -985,23 +915,20 @@
     bindPointerLockMouseMove();
 
     function desktopControlsToJoystick() {
-      let x = 0, y = 0; // x=strife, y=forward/back
+      let x = 0, y = 0;
       if (keys.has("KeyA")) x -= 1;
       if (keys.has("KeyD")) x += 1;
       if (keys.has("KeyW")) y += 1;
       if (keys.has("KeyS")) y -= 1;
       const len = Math.hypot(x, y); if (len > 0) { x /= len; y /= len; }
       joyInput.x = x; joyInput.y = y;
-      // Visual stick mirrors keyboard input
       stick.style.left = (41 + x * JOY_RADIUS) + "px";
       stick.style.top  = (41 - y * JOY_RADIUS) + "px"; // invert visual Y to match screen
       requestAnimationFrame(desktopControlsToJoystick);
     }
     desktopControlsToJoystick();
 
-    /* =================================================================================================
-       Main loop
-    =================================================================================================== */
+    /* Main loop */
     let lastTime = performance.now();
     let frames = 0;
     let lastFpsTime = performance.now();
@@ -1012,14 +939,14 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Keep nearby chunks loaded (throttled)
+      // Chunk window maintenance
       updateVisibleChunks(player.position.x, player.position.z, now);
 
-      // Gravity and vertical motion
+      // Gravity
       playerVel.y -= GRAVITY * dt;
       groundSnapAndDetect(dt);
 
-      // Movement relative to rotation (forward/back/strafe aligned with yaw)
+      // Rotation-based movement
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(forward, joyInput.y)
@@ -1029,14 +956,13 @@
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
-      // Horizontal separation: resolve X then Z axis to avoid jitter
+      // Horizontal resolve X then Z
       player.position.x += vx * dt;
       horizontalResolve('x');
-
       player.position.z += vz * dt;
       horizontalResolve('z');
 
-      // Floor safety and bounds
+      // Bounds and floor safety
       player.position.x = clamp(player.position.x, capsuleRadius, WORLD_SIZE - capsuleRadius);
       player.position.z = clamp(player.position.z, capsuleRadius, WORLD_SIZE - capsuleRadius);
       if (player.position.y < capsuleHeight / 2) {
@@ -1050,7 +976,7 @@
       drawMinimap();
       renderer.render(scene, camera);
 
-      // FPS update (smoothed)
+      // FPS update
       frames++;
       const elapsed = now - lastFpsTime;
       if (elapsed >= 500) {
@@ -1060,12 +986,9 @@
       }
       updateHUD(now);
     }
-
     animate();
 
-    /* =================================================================================================
-       Resize
-    =================================================================================================== */
+    /* Resize */
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -1073,9 +996,7 @@
       recalcJoyCenter();
     });
 
-    /* =================================================================================================
-       Initial chunk window
-    =================================================================================================== */
+    /* Initial chunk preload */
     (function preloadInitial() {
       const cx = Math.floor(player.position.x / CHUNK_SIZE);
       const cz = Math.floor(player.position.z / CHUNK_SIZE);
