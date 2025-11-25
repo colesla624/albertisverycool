@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like — Full build (rotation-based joystick, instanced chunks, minimap, performance panel, ray place/delete)</title>
+  <title>Minecraft-like — Full build with rotation-based joystick, instanced chunks, closable settings, smaller tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     :root { color-scheme: dark; }
@@ -87,28 +87,7 @@
       touch-action: none;
     }
 
-    /* HUD */
-    #hud {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      z-index: 10;
-      display: grid;
-      grid-template-columns: auto auto;
-      gap: 8px 12px;
-      background: rgba(0,0,0,0.35);
-      border: 1px solid rgba(255,255,255,0.25);
-      border-radius: 8px;
-      color: #e6f3ff;
-      padding: 10px 12px;
-      font-size: 12px;
-      backdrop-filter: blur(4px);
-    }
-    #hud label { color: #a8d0ff; opacity: 0.9; }
-    #hud .value { font-weight: 600; color: #fff; min-width: 60px; text-align: right; }
-    #hud .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-
-    /* Settings panel */
+    /* Settings panel (closable) */
     #panel {
       position: absolute;
       left: 12px;
@@ -116,7 +95,7 @@
       z-index: 10;
       width: 300px;
       max-width: calc(100vw - 24px);
-      background: rgba(10, 18, 28, 0.65);
+      background: rgba(10, 18, 28, 0.75);
       color: #e6f3ff;
       border: 1px solid rgba(255,255,255,0.25);
       border-radius: 10px;
@@ -124,8 +103,8 @@
       backdrop-filter: blur(6px);
     }
     #panel h3 {
-      margin: 0 0 8px 0;
-      font-size: 14px;
+      margin: 0 0 10px 0;
+      font-size: 15px;
       color: #a8d0ff;
     }
     #panel .row {
@@ -133,19 +112,24 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      margin: 6px 0;
+      margin: 8px 0;
     }
-    #panel input[type="range"] { width: 160px; }
+    #panel input[type="range"] { width: 165px; }
     #panel .small { font-size: 12px; opacity: 0.9; }
     #panel .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    #panelButtons {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
 
-    /* Minimap */
+    /* Minimap (player tracker) — smaller */
     #minimap {
       position: absolute;
       right: 14px;
       top: 70px;
-      width: 180px;
-      height: 180px;
+      width: 120px; /* smaller tracker */
+      height: 120px; /* smaller tracker */
       z-index: 10;
       background: rgba(0, 0, 0, 0.35);
       border: 1px solid rgba(255,255,255,0.25);
@@ -194,17 +178,9 @@
 
   <div id="joystick"><div id="stick"></div></div>
 
-  <div id="hud">
-    <label>FPS:</label><div id="fps" class="value mono">0</div>
-    <label>Draw calls:</label><div id="drawCalls" class="value mono">0</div>
-    <label>Blocks visible:</label><div id="blocksVisible" class="value mono">0</div>
-    <label>Chunks loaded:</label><div id="chunksLoaded" class="value mono">0</div>
-    <label>Pos:</label><div id="pos" class="value mono">0,0,0</div>
-    <label>Yaw/Pitch:</label><div id="angles" class="value mono">0,0</div>
-  </div>
-
+  <!-- Closable Settings panel (no stats HUD at top-right per request) -->
   <div id="panel">
-    <h3>Performance settings</h3>
+    <h3>Settings</h3>
     <div class="row">
       <span class="small">View radius (chunks)</span>
       <input type="range" id="viewRadiusSlider" min="2" max="10" step="1" value="5"/>
@@ -230,16 +206,21 @@
       <input type="checkbox" id="aaToggle" checked />
     </div>
     <div class="row">
-      <span class="small">Shadows (near only)</span>
+      <span class="small">Shadows</span>
       <input type="checkbox" id="shadowToggle" />
     </div>
     <div class="row">
       <span class="small">Show minimap</span>
       <input type="checkbox" id="minimapToggle" checked />
     </div>
+    <div id="panelButtons">
+      <button id="closePanelBtn" class="btn">Close settings</button>
+      <button id="openPanelBtn" class="btn" style="display:none">Open settings</button>
+    </div>
   </div>
 
-  <div id="minimap"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
+  <!-- Smaller player tracker -->
+  <div id="minimap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
 
   <div class="tip">Double-click the game to enable mouse look. Use the left joystick to move, drag anywhere else to rotate.</div>
 
@@ -398,7 +379,6 @@
       } else {
         chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
-      updateHudChunkStats();
     }
 
     function unloadFarChunks(centerCx, centerCz) {
@@ -411,7 +391,6 @@
           chunks.delete(ck);
         }
       }
-      updateHudChunkStats();
     }
 
     let lastChunkUpdate = 0;
@@ -451,7 +430,6 @@
       } else {
         chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
-      updateHudChunkStats();
     }
 
     /* Player and collisions */
@@ -719,40 +697,9 @@
     }
     updateFog(700);
 
-    /* HUD and minimap */
-    const fpsEl = document.getElementById("fps");
-    const drawCallsEl = document.getElementById("drawCalls");
-    const blocksVisibleEl = document.getElementById("blocksVisible");
-    const chunksLoadedEl = document.getElementById("chunksLoaded");
-    const posEl = document.getElementById("pos");
-    const anglesEl = document.getElementById("angles");
-
+    /* Minimap (player tracker) */
     const minimapCanvas = document.getElementById("minimapCanvas");
     const mmCtx = minimapCanvas.getContext("2d");
-
-    function updateHudChunkStats() {
-      let count = 0;
-      let blocksVisible = 0;
-      for (const data of chunks.values()) {
-        count++;
-        blocksVisible += data.count || 0;
-      }
-      chunksLoadedEl.textContent = count.toString();
-      blocksVisibleEl.textContent = blocksVisible.toString();
-      drawCallsEl.textContent = (count * 3).toString(); // grass/dirt/stone
-    }
-
-    let fpsAvg = 0;
-    let lastFpsUpdate = 0;
-
-    function updateHUD(now) {
-      if (now - lastFpsUpdate > 250) {
-        fpsEl.textContent = Math.round(fpsAvg).toString();
-        lastFpsUpdate = now;
-      }
-      posEl.textContent = `${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)}`;
-      anglesEl.textContent = `${(yaw*180/Math.PI).toFixed(1)}°, ${(pitch*180/Math.PI).toFixed(1)}°`;
-    }
 
     function drawMinimap() {
       const show = document.getElementById("minimapToggle").checked;
@@ -780,22 +727,22 @@
         }
       }
 
-      // Player marker and direction
+      // Player marker and direction (slightly smaller radius due to smaller tracker)
       mmCtx.fillStyle = "#ff4444";
       const px = (player.position.x - (cx - VIEW_RADIUS) * CHUNK_SIZE) * scale;
       const pz = (player.position.z - (cz - VIEW_RADIUS) * CHUNK_SIZE) * scale;
       mmCtx.beginPath();
-      mmCtx.arc(px, pz, 3, 0, Math.PI*2);
+      mmCtx.arc(px, pz, 2.5, 0, Math.PI*2);
       mmCtx.fill();
 
       mmCtx.strokeStyle = "#ff4444";
       mmCtx.beginPath();
       mmCtx.moveTo(px, pz);
-      mmCtx.lineTo(px + Math.sin(-yaw) * 12, pz + Math.cos(-yaw) * 12);
+      mmCtx.lineTo(px + Math.sin(-yaw) * 10, pz + Math.cos(-yaw) * 10);
       mmCtx.stroke();
     }
 
-    /* Settings bindings */
+    /* Settings bindings (plus close/open panel button) */
     const viewRadiusSlider = document.getElementById("viewRadiusSlider");
     const viewRadiusLabel  = document.getElementById("viewRadiusLabel");
     const chunkSizeSlider  = document.getElementById("chunkSizeSlider");
@@ -806,6 +753,20 @@
     const fogLabel         = document.getElementById("fogLabel");
     const aaToggle         = document.getElementById("aaToggle");
     const shadowToggle     = document.getElementById("shadowToggle");
+    const closePanelBtn    = document.getElementById("closePanelBtn");
+    const openPanelBtn     = document.getElementById("openPanelBtn");
+
+    closePanelBtn.addEventListener("click", () => {
+      document.getElementById("panel").style.display = "none";
+      openPanelBtn.style.display = "inline-block";
+      openPanelBtn.style.position = "absolute";
+      openPanelBtn.style.left = "12px";
+      openPanelBtn.style.bottom = "200px";
+    });
+    openPanelBtn.addEventListener("click", () => {
+      document.getElementById("panel").style.display = "block";
+      openPanelBtn.style.display = "none";
+    });
 
     viewRadiusSlider.addEventListener("input", () => {
       VIEW_RADIUS = parseInt(viewRadiusSlider.value, 10);
@@ -849,7 +810,6 @@
 
     aaToggle.addEventListener("change", () => {
       ANTIALIAS = aaToggle.checked;
-      // Recreate renderer
       renderer.dispose();
       const old = renderer.domElement;
       old.parentNode.removeChild(old);
@@ -930,8 +890,6 @@
 
     /* Main loop */
     let lastTime = performance.now();
-    let frames = 0;
-    let lastFpsTime = performance.now();
 
     function animate() {
       requestAnimationFrame(animate);
@@ -975,16 +933,6 @@
       updateCamera();
       drawMinimap();
       renderer.render(scene, camera);
-
-      // FPS update
-      frames++;
-      const elapsed = now - lastFpsTime;
-      if (elapsed >= 500) {
-        fpsAvg = frames * 1000 / elapsed;
-        frames = 0;
-        lastFpsTime = now;
-      }
-      updateHUD(now);
     }
     animate();
 
