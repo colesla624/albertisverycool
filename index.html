@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — Smooth Capsule, Stable Collisions, Drag Look</title>
+  <title>Minecraft-like Game — Chunked Loading, Smooth Capsule, Drag Look</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -77,11 +77,13 @@
 <body>
   <div id="crosshair"></div>
   <button id="povBtn" class="btn">POV: Third</button>
+
   <div id="uiRight">
     <button id="placeBtn" class="btn">Place</button>
     <button id="deleteBtn" class="btn">Delete</button>
   </div>
   <button id="jumpBtn" class="btn">Jump</button>
+
   <div id="joystick"><div id="stick"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -141,54 +143,126 @@
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    // ---------- Voxel world ----------
-    const BLOCK_SIZE = 1;
-    const WORLD_SIZE = 64;
-    const MAX_HEIGHT = 16;
+    // ---------- World and chunks ----------
+    const WORLD_SIZE = 256;     // logical world extent
+    const MAX_HEIGHT = 20;
+    const CHUNK_SIZE = 16;      // chunk dimensions (x,z)
+    const VIEW_RADIUS = 3;      // chunks radius to load around player
 
+    const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    const blockGeo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-    const voxels = new Map();
-    function key(x,y,z){ return `${x},${y},${z}`; }
-    function isSolid(x,y,z){ return voxels.has(key(x,y,z)); }
+    // World data: sparse dictionary of blocks
+    const world = new Map(); // key "x,y,z" -> type
+    function k(x,y,z){ return `${x},${y},${z}`; }
+    function getBlock(x,y,z){ return world.get(k(x,y,z)); }
+    function setBlock(x,y,z,type){ world.set(k(x,y,z), type); }
+    function clearBlock(x,y,z){ world.delete(k(x,y,z)); }
 
-    function addBlock(x, y, z, type = "grass") {
-      const k = key(x, y, z);
-      if (voxels.has(k)) return;
-      const mat = type === "stone" ? matStone : (type === "dirt" ? matDirt : matGrass);
-      const mesh = new THREE.Mesh(blockGeo, mat);
-      mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
-      mesh.userData = { x, y, z, type };
-      scene.add(mesh);
-      voxels.set(k, mesh);
-    }
-    function removeBlock(x, y, z) {
-      const k = key(x, y, z);
-      const mesh = voxels.get(k);
-      if (!mesh) return;
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      voxels.delete(k);
-    }
-
+    // Generate terrain in data only (no meshes yet)
     const noise = makeNoise2D(1337);
-    const SCALE = 0.08;
+    const SCALE = 0.06;
     for (let x = 0; x < WORLD_SIZE; x++) {
       for (let z = 0; z < WORLD_SIZE; z++) {
         const nx = x * SCALE, nz = z * SCALE;
-        const hVal = (noise(nx, nz) * 0.65) + (noise(nx * 0.45, nz * 0.45) * 0.35);
+        const hVal = (noise(nx, nz) * 0.6) + (noise(nx * 0.5, nz * 0.5) * 0.4);
         const height = Math.floor((hVal * 0.5 + 0.5) * MAX_HEIGHT);
         for (let y = 0; y <= height; y++) {
           const type = y === height ? "grass" : (y > height - 3 ? "dirt" : "stone");
-          addBlock(x, y, z, type);
+          setBlock(x,y,z,type);
         }
       }
     }
 
-    // ---------- Player capsule ----------
+    // Chunks: load/unload visible groups
+    const chunks = new Map(); // key "cx,cz" -> { group, meshCount }
+    function chunkKey(cx,cz){ return `${cx},${cz}`; }
+
+    function buildChunkMesh(cx, cz) {
+      const group = new THREE.Group();
+      let count = 0;
+      const startX = cx * CHUNK_SIZE;
+      const startZ = cz * CHUNK_SIZE;
+
+      for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+          const wx = startX + lx;
+          const wz = startZ + lz;
+          for (let y = 0; y <= MAX_HEIGHT; y++) {
+            const type = getBlock(wx,y,wz);
+            if (!type) continue;
+            const mat = type === "grass" ? matGrass : (type === "dirt" ? matDirt : matStone);
+            const mesh = new THREE.Mesh(blockGeo, mat);
+            mesh.position.set(wx + 0.5, y + 0.5, wz + 0.5);
+            mesh.userData = { x: wx, y, z: wz };
+            group.add(mesh);
+            count++;
+          }
+        }
+      }
+
+      return { group, count };
+    }
+
+    function loadChunk(cx, cz) {
+      const ck = chunkKey(cx, cz);
+      if (chunks.has(ck)) return;
+      const { group, count } = buildChunkMesh(cx, cz);
+      if (count > 0) {
+        scene.add(group);
+        chunks.set(ck, { group, count });
+      } else {
+        chunks.set(ck, { group: null, count: 0 });
+      }
+    }
+
+    function unloadFarChunks(centerCx, centerCz) {
+      for (const [ck, data] of chunks) {
+        const [sx, sz] = ck.split(',').map(Number);
+        const dx = Math.abs(sx - centerCx);
+        const dz = Math.abs(sz - centerCz);
+        if (dx > VIEW_RADIUS || dz > VIEW_RADIUS) {
+          if (data.group) scene.remove(data.group);
+          chunks.delete(ck);
+        }
+      }
+    }
+
+    function updateVisibleChunks(px, pz) {
+      const cx = Math.floor(px / CHUNK_SIZE);
+      const cz = Math.floor(pz / CHUNK_SIZE);
+      for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
+        for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
+          const ncx = cx + dx, ncz = cz + dz;
+          if (ncx < 0 || ncz < 0 || ncx >= Math.ceil(WORLD_SIZE/CHUNK_SIZE) || ncz >= Math.ceil(WORLD_SIZE/CHUNK_SIZE)) continue;
+          loadChunk(ncx, ncz);
+        }
+      }
+      unloadFarChunks(cx, cz);
+    }
+
+    // Rebuild a single block in its chunk (after place/delete)
+    function rebuildBlockMesh(x, y, z) {
+      const cx = Math.floor(x / CHUNK_SIZE);
+      const cz = Math.floor(z / CHUNK_SIZE);
+      const ck = chunkKey(cx, cz);
+      const cur = chunks.get(ck);
+      if (!cur) return; // chunk not visible: no need now; it will be built when visible
+
+      // Remove old group and rebuild
+      if (cur.group) scene.remove(cur.group);
+      const rebuilt = buildChunkMesh(cx, cz);
+      if (rebuilt.count > 0) {
+        scene.add(rebuilt.group);
+        chunks.set(ck, rebuilt);
+      } else {
+        chunks.set(ck, { group: null, count: 0 });
+      }
+    }
+
+    // ---------- Player capsule and movement ----------
     const capsuleRadius = 0.4;
     const capsuleMid = 1.0;
     const capsuleHeight = capsuleMid + 2 * capsuleRadius;
@@ -205,9 +279,15 @@
     let onGround = false;
     let pov = "third";
 
-    // Facing via drag
     let yaw = 0;
-    let pitch = 0; // clamp for stability
+    let pitch = 0;
+
+    function getFacingVectors() {
+      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+      const forward = new THREE.Vector3(-sinY, 0, -cosY).normalize();
+      const right   = new THREE.Vector3( cosY, 0, -sinY).normalize();
+      return { forward, right };
+    }
 
     // ---------- Joystick (inverted forward/backward) ----------
     const joystick = document.getElementById("joystick");
@@ -281,42 +361,41 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    // ---------- Raycasting for build ----------
+    // ---------- Raycasting: against currently visible chunk meshes ----------
     const raycaster = new THREE.Raycaster();
     function getCenterRayHit() {
       const ndc = new THREE.Vector2(0, 0);
       raycaster.setFromCamera(ndc, camera);
-      const meshes = Array.from(voxels.values());
-      const hits = raycaster.intersectObjects(meshes, false);
+      const visibleMeshes = [];
+      for (const { group } of chunks.values()) {
+        if (!group) continue;
+        for (const child of group.children) visibleMeshes.push(child);
+      }
+      const hits = raycaster.intersectObjects(visibleMeshes, false);
       return hits.length ? hits[0] : null;
     }
+
     function placeBlockAtAim() {
       const hit = getCenterRayHit();
       if (!hit) return;
       const normalWorld = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
       const p = hit.point.clone().addScaledVector(normalWorld, 0.5);
-      const gx = Math.floor(p.x), gy = Math.floor(p.y), gz = Math.floor(p.z);
-      if (gx < 0 || gz < 0 || gx >= WORLD_SIZE || gz >= WORLD_SIZE || gy < 0 || gy > MAX_HEIGHT + 20) return;
-      addBlock(gx, gy, gz, "grass");
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (x < 0 || z < 0 || x >= WORLD_SIZE || z >= WORLD_SIZE || y < 0 || y > MAX_HEIGHT + 20) return;
+      setBlock(x,y,z,"grass");
+      rebuildBlockMesh(x,y,z);
     }
     function deleteBlockAtAim() {
       const hit = getCenterRayHit();
       if (!hit) return;
       const { x, y, z } = hit.object.userData;
-      removeBlock(x, y, z);
+      clearBlock(x,y,z);
+      rebuildBlockMesh(x,y,z);
     }
     placeBtn.addEventListener("click", placeBlockAtAim);
     deleteBtn.addEventListener("click", deleteBlockAtAim);
 
-    // ---------- Movement helpers ----------
-    function getFacingVectors() {
-      const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
-      const forward = new THREE.Vector3(-sinY, 0, -cosY).normalize();
-      const right   = new THREE.Vector3( cosY, 0, -sinY).normalize();
-      return { forward, right };
-    }
-
-    // Stable ground snap: only when falling through a block top
+    // ---------- Collisions (capsule vs voxel data, stable snap) ----------
     function groundSnapAndDetect(dt) {
       let nextY = player.position.y + playerVel.y * dt;
       const footY = nextY - capsuleHeight / 2;
@@ -324,7 +403,6 @@
       const px = player.position.x;
       const pz = player.position.z;
 
-      // Sample a small footprint under the capsule
       const minX = Math.floor(px - capsuleRadius + 0.001);
       const maxX = Math.floor(px + capsuleRadius - 0.001);
       const minZ = Math.floor(pz - capsuleRadius + 0.001);
@@ -334,8 +412,8 @@
       let highestGround = -Infinity;
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
-          if (isSolid(x, probeY, z)) {
-            highestGround = Math.max(highestGround, probeY + 1); // block top surface
+          if (getBlock(x, probeY, z)) {
+            highestGround = Math.max(highestGround, probeY + 1);
           }
         }
       }
@@ -354,7 +432,6 @@
       onGround = false;
     }
 
-    // Horizontal separation: slide around blocks without jitter
     function horizontalResolve(axis) {
       const radius = capsuleRadius;
       const halfH = capsuleHeight / 2;
@@ -373,11 +450,11 @@
       for (let x = minX; x <= maxX; x++) {
         for (let y = minY; y <= maxY; y++) {
           for (let z = minZ; z <= maxZ; z++) {
-            if (!isSolid(x, y, z)) continue;
+            if (!getBlock(x,y,z)) continue;
             const bx = x + 0.5, by = y + 0.5, bz = z + 0.5;
             const dx = px - bx;
             const dz = pz - bz;
-            const vertGap = Math.max(0, Math.abs(centerY - by) - 0.5); // vertical separation from block slab
+            const vertGap = Math.max(0, Math.abs(centerY - by) - 0.5);
             const horizDist = Math.hypot(dx, dz);
 
             if (vertGap < halfH && horizDist < radius + 0.5) {
@@ -394,10 +471,10 @@
       }
     }
 
-    // ---------- Camera update with smoothing ----------
+    // ---------- Camera with smoothing ----------
     const camPos = new THREE.Vector3();
     const camTarget = new THREE.Vector3();
-    const CAM_LERP = 0.18; // smoothing factor
+    const CAM_LERP = 0.18;
 
     function updateCamera() {
       const { forward } = getFacingVectors();
@@ -409,16 +486,11 @@
         camPos.copy(eye);
         camTarget.copy(eye).add(lookDir);
       } else {
-        // Orbit camera behind player using yaw/pitch
         const distance = 7.5;
-        const pitchClamped = pitch;
-        const offsetY = 1.6;
-
-        const offX = Math.sin(yaw) * Math.cos(pitchClamped) * distance;
-        const offZ = Math.cos(yaw) * Math.cos(pitchClamped) * distance;
-        const offY = Math.sin(pitchClamped) * distance * 0.6;
-
-        const desiredPos = target.clone().add(new THREE.Vector3(-offX, offsetY + offY, -offZ));
+        const offX = Math.sin(yaw) * Math.cos(pitch) * distance;
+        const offZ = Math.cos(yaw) * Math.cos(pitch) * distance;
+        const offY = Math.sin(pitch) * distance * 0.6;
+        const desiredPos = target.clone().add(new THREE.Vector3(-offX, 1.6 + offY, -offZ));
         camPos.lerp(desiredPos, CAM_LERP);
         camTarget.lerp(target.clone().add(new THREE.Vector3(0, 1.2, 0)), CAM_LERP);
       }
@@ -435,10 +507,13 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
+      // Load/unload visible chunks around player
+      updateVisibleChunks(player.position.x, player.position.z);
+
       // Gravity
       playerVel.y -= GRAVITY * dt;
 
-      // Movement based on facing and joystick
+      // Movement
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(right, joyVec.x)
@@ -448,17 +523,17 @@
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
-      // 1) Vertical: stable snap to ground (no bounce)
+      // Vertical: stable snap (no bounce)
       groundSnapAndDetect(dt);
 
-      // 2) Horizontal: X then Z axis separation
+      // Horizontal: X then Z resolution
       player.position.x += vx * dt;
       horizontalResolve('x');
 
       player.position.z += vz * dt;
       horizontalResolve('z');
 
-      // Bounds safety
+      // Bounds
       player.position.x = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.x));
       player.position.z = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.z));
       if (player.position.y < capsuleHeight / 2) {
@@ -491,8 +566,8 @@
       let x = 0, y = 0;
       if (keys.has("KeyA")) x -= 1;
       if (keys.has("KeyD")) x += 1;
-      if (keys.has("KeyW")) y += 1;  // W = backward (inverted)
-      if (keys.has("KeyS")) y -= 1;  // S = forward
+      if (keys.has("KeyW")) y += 1;  // backward (inverted)
+      if (keys.has("KeyS")) y -= 1;  // forward
       const len = Math.hypot(x, y);
       if (len > 0) { x /= len; y /= len; }
       joyVec.x = x; joyVec.y = y;
