@@ -2,12 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — Flipped/Inverted Joystick, Low-Lag Instanced Chunks</title>
+  <title>Minecraft-like — Full build (rotation-based joystick, instanced chunks, performance panel, minimap, ray build/delete)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
-    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    /* ----------------------------------------------------------------------------------------------
+       Base styles and layout
+    ---------------------------------------------------------------------------------------------- */
+    :root {
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: #0b1b2b;
+    }
     canvas { display: block; }
 
+    /* ----------------------------------------------------------------------------------------------
+       Buttons and UI
+    ---------------------------------------------------------------------------------------------- */
     .btn {
       padding: 10px 14px;
       background: rgba(30,30,30,0.65);
@@ -18,13 +33,15 @@
       backdrop-filter: blur(4px);
       user-select: none;
       touch-action: manipulation;
+      cursor: pointer;
     }
+    .btn:hover { filter: brightness(1.08); }
     #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
 
     #uiRight {
       position: absolute;
       right: 14px;
-      bottom: 140px;
+      bottom: 160px;
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -32,6 +49,28 @@
     }
     #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px; height: 20px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0.9;
+    }
+    #crosshair::before, #crosshair::after {
+      content: "";
+      position: absolute;
+      background: rgba(255,255,255,0.95);
+      box-shadow: 0 0 2px rgba(0,0,0,0.4);
+    }
+    #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
+    #crosshair::after { width: 20px; height: 2px; left: 0; top: 9px; }
+
+    /* ----------------------------------------------------------------------------------------------
+       Joystick
+    ---------------------------------------------------------------------------------------------- */
     #joystick {
       position: absolute;
       bottom: 24px;
@@ -55,40 +94,185 @@
       touch-action: none;
     }
 
-    #crosshair {
+    /* ----------------------------------------------------------------------------------------------
+       HUD
+    ---------------------------------------------------------------------------------------------- */
+    #hud {
       position: absolute;
-      top: 50%;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 8px 12px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      color: #e6f3ff;
+      padding: 10px 12px;
+      font-size: 12px;
+      backdrop-filter: blur(4px);
+    }
+    #hud label {
+      color: #a8d0ff;
+      opacity: 0.9;
+    }
+    #hud .value {
+      font-weight: 600;
+      color: #fff;
+      min-width: 60px;
+      text-align: right;
+    }
+    #hud .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    /* ----------------------------------------------------------------------------------------------
+       Settings panel
+    ---------------------------------------------------------------------------------------------- */
+    #panel {
+      position: absolute;
+      left: 12px;
+      bottom: 200px;
+      z-index: 10;
+      width: 280px;
+      max-width: calc(100vw - 24px);
+      background: rgba(10, 18, 28, 0.65);
+      color: #e6f3ff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px;
+      padding: 12px;
+      backdrop-filter: blur(6px);
+    }
+    #panel h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #a8d0ff;
+    }
+    #panel .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 6px 0;
+    }
+    #panel input[type="range"] { width: 140px; }
+    #panel .small { font-size: 12px; opacity: 0.9; }
+    #panel .mono  { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+    /* ----------------------------------------------------------------------------------------------
+       Minimap
+    ---------------------------------------------------------------------------------------------- */
+    #minimap {
+      position: absolute;
+      right: 14px;
+      top: 70px;
+      width: 160px;
+      height: 160px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+    #minimap canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      border-radius: 8px;
+    }
+
+    /* ----------------------------------------------------------------------------------------------
+       Tooltip
+    ---------------------------------------------------------------------------------------------- */
+    .tip {
+      position: absolute;
       left: 50%;
-      width: 20px; height: 20px;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      z-index: 5;
+      bottom: 10px;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.45);
+      color: #e6f3ff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      z-index: 10;
+      backdrop-filter: blur(4px);
     }
-    #crosshair::before, #crosshair::after {
-      content: "";
-      position: absolute;
-      background: rgba(255,255,255,0.9);
-      box-shadow: 0 0 2px rgba(0,0,0,0.4);
-    }
-    #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
-    #crosshair::after { width: 20px; height: 2px; left: 0; top: 9px; }
   </style>
 </head>
 <body>
   <div id="crosshair"></div>
+
   <button id="povBtn" class="btn">POV: Third</button>
 
   <div id="uiRight">
     <button id="placeBtn" class="btn">Place</button>
     <button id="deleteBtn" class="btn">Delete</button>
+    <button id="reseedBtn" class="btn">Reseed</button>
   </div>
+
   <button id="jumpBtn" class="btn">Jump</button>
 
   <div id="joystick"><div id="stick"></div></div>
 
+  <div id="hud">
+    <label>FPS:</label><div id="fps" class="value mono">0</div>
+    <label>Draw calls:</label><div id="drawCalls" class="value mono">0</div>
+    <label>Blocks visible:</label><div id="blocksVisible" class="value mono">0</div>
+    <label>Chunks loaded:</label><div id="chunksLoaded" class="value mono">0</div>
+    <label>Pos:</label><div id="pos" class="value mono">0,0,0</div>
+    <label>Yaw/Pitch:</label><div id="angles" class="value mono">0,0</div>
+  </div>
+
+  <div id="panel">
+    <h3>Performance settings</h3>
+    <div class="row">
+      <span class="small">View radius (chunks)</span>
+      <input type="range" id="viewRadiusSlider" min="2" max="8" step="1" value="4"/>
+      <span id="viewRadiusLabel" class="mono small">4</span>
+    </div>
+    <div class="row">
+      <span class="small">Chunk size (blocks)</span>
+      <input type="range" id="chunkSizeSlider" min="8" max="24" step="1" value="10"/>
+      <span id="chunkSizeLabel" class="mono small">10</span>
+    </div>
+    <div class="row">
+      <span class="small">Max height</span>
+      <input type="range" id="heightSlider" min="12" max="40" step="1" value="20"/>
+      <span id="heightLabel" class="mono small">20</span>
+    </div>
+    <div class="row">
+      <span class="small">Fog distance</span>
+      <input type="range" id="fogSlider" min="200" max="900" step="50" value="600"/>
+      <span id="fogLabel" class="mono small">600</span>
+    </div>
+    <div class="row">
+      <span class="small">Antialias</span>
+      <input type="checkbox" id="aaToggle" checked />
+    </div>
+    <div class="row">
+      <span class="small">Shadows (near only)</span>
+      <input type="checkbox" id="shadowToggle" />
+    </div>
+    <div class="row">
+      <span class="small">Show minimap</span>
+      <input type="checkbox" id="minimapToggle" checked />
+    </div>
+  </div>
+
+  <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
+
+  <div class="tip">Tip: Double-click the game to enable mouse look. Use the left joystick to move, drag anywhere else to rotate.</div>
+
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
-    // ---------- Utilities: seeded 2D noise ----------
+    /* =================================================================================================
+       Utilities: seeded 2D noise, math helpers
+    =================================================================================================== */
     function mulberry32(seed) {
       return function() {
         let t = seed += 0x6D2B79F5;
@@ -97,6 +281,7 @@
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
       };
     }
+
     function makeNoise2D(seed = 1337) {
       const rand = mulberry32(seed);
       const perm = new Uint8Array(512);
@@ -128,65 +313,83 @@
       };
     }
 
-    // ---------- Three.js setup ----------
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    /* =================================================================================================
+       Scene setup
+    =================================================================================================== */
+    let ANTIALIAS = true;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1200);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1200);
+    let renderer = new THREE.WebGLRenderer({ antialias: ANTIALIAS, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x889988, 0.7);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.0); // default off (toggle in panel)
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    // ---------- World and chunked loading ----------
-    const WORLD_SIZE = 200;
-    const MAX_HEIGHT = 20;
-    const CHUNK_SIZE = 10;   // 10x10 blocks per chunk (x,z)
-    const VIEW_RADIUS = 4;   // chunks radius to load around player
+    /* =================================================================================================
+       Global parameters and materials
+    =================================================================================================== */
+    let WORLD_SIZE = 256;
+    let MAX_HEIGHT = 20;
+    let CHUNK_SIZE = 10;      // blocks per chunk (x,z)
+    let VIEW_RADIUS = 4;      // chunks radius to load around player
+    let SEED = 1337;
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    const noise = makeNoise2D(1337);
-    const SCALE = 0.06;
+    /* =================================================================================================
+       World data and generation (sparse map)
+    =================================================================================================== */
+    let noise = makeNoise2D(SEED);
+    let SCALE = 0.06;
 
-    // Sparse world data
-    const world = new Map(); // "x,y,z" -> type
+    const world = new Map(); // key "x,y,z" -> type
     function K(x,y,z){ return `${x},${y},${z}`; }
     function getBlock(x,y,z){ return world.get(K(x,y,z)); }
     function setBlock(x,y,z,type){ world.set(K(x,y,z), type); }
     function clearBlock(x,y,z){ world.delete(K(x,y,z)); }
 
-    // Generate terrain (data only)
-    for (let x = 0; x < WORLD_SIZE; x++) {
-      for (let z = 0; z < WORLD_SIZE; z++) {
-        const nx = x * SCALE, nz = z * SCALE;
-        const hVal = (noise(nx, nz) * 0.6) + (noise(nx * 0.5, nz * 0.5) * 0.4);
-        const height = Math.floor((hVal * 0.5 + 0.5) * MAX_HEIGHT);
-        for (let y = 0; y <= height; y++) {
-          const type = y === height ? "grass" : (y > height - 3 ? "dirt" : "stone");
-          setBlock(x,y,z,type);
+    function generateTerrain() {
+      world.clear();
+      for (let x = 0; x < WORLD_SIZE; x++) {
+        for (let z = 0; z < WORLD_SIZE; z++) {
+          const nx = x * SCALE, nz = z * SCALE;
+          const hVal = (noise(nx, nz) * 0.6) + (noise(nx * 0.5, nz * 0.5) * 0.4);
+          const height = Math.floor((hVal * 0.5 + 0.5) * MAX_HEIGHT);
+          for (let y = 0; y <= height; y++) {
+            const type = y === height ? "grass" : (y > height - 3 ? "dirt" : "stone");
+            setBlock(x,y,z,type);
+          }
         }
       }
     }
 
-    // Visible chunk meshes using InstancedMesh (low draw calls)
-    const chunks = new Map(); // "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
+    generateTerrain();
+
+    /* =================================================================================================
+       Chunk rendering with InstancedMesh (low draw calls), load/unload window
+    =================================================================================================== */
+    const chunks = new Map(); // key "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
 
+    const matrixTemp = new THREE.Matrix4();
     function buildChunkInstanced(cx, cz) {
       const group = new THREE.Group();
       const startX = cx * CHUNK_SIZE;
       const startZ = cz * CHUNK_SIZE;
 
-      // Collect block transforms per material
       const grass = [], dirt = [], stone = [];
+
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           const wx = startX + lx;
@@ -202,25 +405,25 @@
         }
       }
 
-      const meshes = {};
-      const m = new THREE.Matrix4();
-
       function makeInstanced(arr, mat) {
         if (!arr.length) return null;
         const inst = new THREE.InstancedMesh(blockGeo, mat, arr.length);
         for (let i = 0; i < arr.length; i++) {
-          m.makeTranslation(arr[i].x, arr[i].y, arr[i].z);
-          inst.setMatrixAt(i, m);
+          matrixTemp.makeTranslation(arr[i].x, arr[i].y, arr[i].z);
+          inst.setMatrixAt(i, matrixTemp);
         }
         inst.instanceMatrix.needsUpdate = true;
+        inst.castShadow = false;
+        inst.receiveShadow = false;
         group.add(inst);
         return inst;
       }
 
-      meshes.grass = makeInstanced(grass, matGrass);
-      meshes.dirt  = makeInstanced(dirt,  matDirt);
-      meshes.stone = makeInstanced(stone, matStone);
-
+      const meshes = {
+        grass: makeInstanced(grass, matGrass),
+        dirt:  makeInstanced(dirt,  matDirt),
+        stone: makeInstanced(stone, matStone),
+      };
       const count = grass.length + dirt.length + stone.length;
       return { group, meshes, count };
     }
@@ -235,6 +438,7 @@
       } else {
         chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
+      updateHudChunkStats();
     }
 
     function unloadFarChunks(centerCx, centerCz) {
@@ -247,9 +451,16 @@
           chunks.delete(ck);
         }
       }
+      updateHudChunkStats();
     }
 
-    function updateVisibleChunks(px, pz) {
+    let lastChunkUpdate = 0;
+    const CHUNK_UPDATE_INTERVAL_MS = 120; // throttle chunk updates for smoother movement
+
+    function updateVisibleChunks(px, pz, nowMs) {
+      if (nowMs - lastChunkUpdate < CHUNK_UPDATE_INTERVAL_MS) return;
+      lastChunkUpdate = nowMs;
+
       const cx = Math.floor(px / CHUNK_SIZE);
       const cz = Math.floor(pz / CHUNK_SIZE);
       const maxCx = Math.ceil(WORLD_SIZE / CHUNK_SIZE) - 1;
@@ -280,25 +491,30 @@
       } else {
         chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
+      updateHudChunkStats();
     }
 
-    // ---------- Player capsule and movement ----------
+    /* =================================================================================================
+       Player, capsule collider, movement, collisions
+    =================================================================================================== */
     const capsuleRadius = 0.4;
     const capsuleMid = 1.0;
     const capsuleHeight = capsuleMid + 2 * capsuleRadius;
+
     const capsuleGeo = new THREE.CapsuleGeometry(capsuleRadius, capsuleMid, 8, 16);
     const capsuleMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
     const player = new THREE.Mesh(capsuleGeo, capsuleMat);
     player.position.set(WORLD_SIZE/2 + 0.5, MAX_HEIGHT + 8, WORLD_SIZE/2 + 0.5);
+    player.castShadow = false;
+    player.receiveShadow = false;
     scene.add(player);
 
     const playerVel = new THREE.Vector3(0, 0, 0);
     const GRAVITY = 22;
-    const MOVE_SPEED = 5.2;
-    const JUMP_SPEED = 9.2;
+    const MOVE_SPEED = 5.8;
+    const JUMP_SPEED = 9.4;
     let onGround = false;
     let pov = "third";
-
     let yaw = 0;
     let pitch = 0;
 
@@ -309,130 +525,6 @@
       return { forward, right };
     }
 
-    // ---------- Joystick (flipped + inverted controls) ----------
-    const joystick = document.getElementById("joystick");
-    const stick = document.getElementById("stick");
-    let joyVec = { x: 0, y: 0 };
-    const JOY_RADIUS = 56;
-    let joyCenter = null;
-
-    function recalcJoyCenter() {
-      const rect = joystick.getBoundingClientRect();
-      joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
-    }
-    recalcJoyCenter();
-    window.addEventListener('resize', recalcJoyCenter);
-
-    function updateJoystick(e) {
-      const t = e.touches[0];
-      const dx = t.clientX - joyCenter.x;
-      const dy = t.clientY - joyCenter.y;
-      const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
-      const angle = Math.atan2(dy, dx);
-
-      const rawX = Math.cos(angle) * (dist / JOY_RADIUS);
-      const rawY = Math.sin(angle) * (dist / JOY_RADIUS);
-
-      // Flip axes AND invert:
-      // - Up/down (rawY) becomes horizontal movement (right/left), inverted.
-      // - Left/right (rawX) becomes forward/backward, inverted.
-      joyVec.x = -rawY;  // up -> move right, down -> move left
-      joyVec.y = -rawX;  // right -> move backward, left -> move forward
-
-      // Move the visual stick (unchanged visual; only logic flipped/inverted)
-      stick.style.left = (41 + rawX * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + rawY * JOY_RADIUS) + "px";
-    }
-    joystick.addEventListener("touchstart", updateJoystick, { passive: true });
-    joystick.addEventListener("touchmove", updateJoystick, { passive: true });
-    joystick.addEventListener("touchend", () => {
-      joyVec.x = 0; joyVec.y = 0;
-      stick.style.left = "41px"; stick.style.top = "41px";
-    });
-
-    // ---------- Drag rotation (exclude joystick) ----------
-    let dragging = false, lastX = 0, lastY = 0;
-    document.addEventListener("touchstart", e => {
-      if (e.target.closest("#joystick")) return;
-      dragging = true;
-      lastX = e.touches[0].clientX;
-      lastY = e.touches[0].clientY;
-    }, { passive: true });
-
-    document.addEventListener("touchmove", e => {
-      if (!dragging) return;
-      const tx = e.touches[0].clientX;
-      const ty = e.touches[0].clientY;
-      const dx = tx - lastX;
-      const dy = ty - lastY;
-      yaw -= dx * 0.005;
-      pitch -= dy * 0.005;
-      pitch = Math.max(-Math.PI/3, Math.min(Math.PI/3, pitch));
-      lastX = tx; lastY = ty;
-    }, { passive: true });
-
-    document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
-
-    // ---------- Buttons ----------
-    const povBtn = document.getElementById("povBtn");
-    const jumpBtn = document.getElementById("jumpBtn");
-    const placeBtn = document.getElementById("placeBtn");
-    const deleteBtn = document.getElementById("deleteBtn");
-
-    povBtn.addEventListener("click", () => {
-      pov = (pov === "third") ? "first" : "third";
-      povBtn.textContent = `POV: ${pov === "third" ? "Third" : "First"}`;
-    });
-
-    jumpBtn.addEventListener("click", () => {
-      if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
-    });
-
-    // ---------- Raycasting against visible InstancedMeshes ----------
-    const raycaster = new THREE.Raycaster();
-    function collectVisibleInstanced() {
-      const arr = [];
-      for (const { meshes } of chunks.values()) {
-        if (!meshes) continue;
-        if (meshes.grass) arr.push(meshes.grass);
-        if (meshes.dirt)  arr.push(meshes.dirt);
-        if (meshes.stone) arr.push(meshes.stone);
-      }
-      return arr;
-    }
-    function getCenterRayHit() {
-      const ndc = new THREE.Vector2(0, 0);
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(collectVisibleInstanced(), false);
-      return hits.length ? hits[0] : null; // InstancedMesh hit
-    }
-
-    function placeBlockAtAim() {
-      const hit = getCenterRayHit();
-      if (!hit) return;
-      const normalWorld = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-      const p = hit.point.clone().addScaledVector(normalWorld, 0.5);
-      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
-      if (x < 0 || z < 0 || x >= WORLD_SIZE || z >= WORLD_SIZE || y < 0 || y > MAX_HEIGHT + 20) return;
-      setBlock(x,y,z,"grass");
-      rebuildChunkAtBlock(x,y,z);
-    }
-    function deleteBlockAtAim() {
-      const hit = getCenterRayHit();
-      if (!hit) return;
-
-      // Since we’re using instanced meshes, we don’t have per-instance mapping here.
-      // We’ll approximate by deleting the block at the rounded hit point.
-      const x = Math.floor(hit.point.x);
-      const y = Math.floor(hit.point.y);
-      const z = Math.floor(hit.point.z);
-      clearBlock(x,y,z);
-      rebuildChunkAtBlock(x,y,z);
-    }
-    placeBtn.addEventListener("click", placeBlockAtAim);
-    deleteBtn.addEventListener("click", deleteBlockAtAim);
-
-    // ---------- Collisions (capsule vs voxel data, stable snap) ----------
     function groundSnapAndDetect(dt) {
       let nextY = player.position.y + playerVel.y * dt;
       const footY = nextY - capsuleHeight / 2;
@@ -508,83 +600,472 @@
       }
     }
 
-    // ---------- Camera with smoothing ----------
+    /* =================================================================================================
+       Joystick: rotation-based movement (forward/back/strafe aligned to yaw)
+    =================================================================================================== */
+    const joystick = document.getElementById("joystick");
+    const stick = document.getElementById("stick");
+    let joyInput = { x: 0, y: 0 };
+    const JOY_RADIUS = 56;
+    let joyCenter = null;
+
+    function recalcJoyCenter() {
+      const rect = joystick.getBoundingClientRect();
+      joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+    }
+    recalcJoyCenter();
+    window.addEventListener('resize', recalcJoyCenter);
+
+    function updateJoystick(e) {
+      const t = e.touches[0];
+      const dx = t.clientX - joyCenter.x;
+      const dy = t.clientY - joyCenter.y;
+      const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
+      const angle = Math.atan2(dy, dx);
+
+      const rawX = Math.cos(angle) * (dist / JOY_RADIUS);
+      const rawY = Math.sin(angle) * (dist / JOY_RADIUS);
+
+      // Map: rawY up is negative screen Y => forward; rawX is left/right strafe
+      joyInput.x = rawX;     // left/right
+      joyInput.y = -rawY;    // forward/back
+
+      // Move the visual stick in screen space
+      stick.style.left = (41 + rawX * JOY_RADIUS) + "px";
+      stick.style.top  = (41 + rawY * JOY_RADIUS) + "px";
+    }
+    joystick.addEventListener("touchstart", updateJoystick, { passive: true });
+    joystick.addEventListener("touchmove", updateJoystick, { passive: true });
+    joystick.addEventListener("touchend", () => {
+      joyInput.x = 0; joyInput.y = 0;
+      stick.style.left = "41px"; stick.style.top = "41px";
+    });
+
+    /* =================================================================================================
+       Drag rotation (touch)
+    =================================================================================================== */
+    let dragging = false, lastX = 0, lastY = 0;
+    document.addEventListener("touchstart", e => {
+      if (e.target.closest("#joystick")) return;
+      dragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener("touchmove", e => {
+      if (!dragging) return;
+      const tx = e.touches[0].clientX;
+      const ty = e.touches[0].clientY;
+      const dx = tx - lastX;
+      const dy = ty - lastY;
+      yaw -= dx * 0.005;
+      pitch -= dy * 0.005;
+      pitch = clamp(pitch, -Math.PI/3, Math.PI/3);
+      lastX = tx; lastY = ty;
+    }, { passive: true });
+
+    document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
+
+    /* =================================================================================================
+       Buttons: POV toggle, Jump, Place/Delete, Reseed
+    =================================================================================================== */
+    const povBtn    = document.getElementById("povBtn");
+    const jumpBtn   = document.getElementById("jumpBtn");
+    const placeBtn  = document.getElementById("placeBtn");
+    const deleteBtn = document.getElementById("deleteBtn");
+    const reseedBtn = document.getElementById("reseedBtn");
+
+    povBtn.addEventListener("click", () => {
+      pov = (pov === "third") ? "first" : "third";
+      povBtn.textContent = `POV: ${pov === "third" ? "Third" : "First"}`;
+    });
+
+    jumpBtn.addEventListener("click", () => {
+      if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
+    });
+
+    const raycaster = new THREE.Raycaster();
+
+    function collectVisibleInstanced() {
+      const arr = [];
+      for (const { meshes } of chunks.values()) {
+        if (!meshes) continue;
+        if (meshes.grass) arr.push(meshes.grass);
+        if (meshes.dirt)  arr.push(meshes.dirt);
+        if (meshes.stone) arr.push(meshes.stone);
+      }
+      return arr;
+    }
+
+    function getCenterRayHit() {
+      const ndc = new THREE.Vector2(0, 0);
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(collectVisibleInstanced(), false);
+      return hits.length ? hits[0] : null;
+    }
+
+    placeBtn.addEventListener("click", () => {
+      const hit = getCenterRayHit();
+      if (!hit) return;
+      const normalWorld = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      const p = hit.point.clone().addScaledVector(normalWorld, 0.5);
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (x < 0 || z < 0 || x >= WORLD_SIZE || z >= WORLD_SIZE || y < 0 || y > MAX_HEIGHT + 20) return;
+      setBlock(x,y,z,"grass");
+      rebuildChunkAtBlock(x,y,z);
+    });
+
+    deleteBtn.addEventListener("click", () => {
+      const hit = getCenterRayHit();
+      if (!hit) return;
+      // Approximate delete at rounded hit point (instanced mesh lacks per-instance identity)
+      const x = Math.floor(hit.point.x);
+      const y = Math.floor(hit.point.y);
+      const z = Math.floor(hit.point.z);
+      clearBlock(x,y,z);
+      rebuildChunkAtBlock(x,y,z);
+    });
+
+    reseedBtn.addEventListener("click", () => {
+      SEED = Math.floor(Math.random() * 1e9);
+      noise = makeNoise2D(SEED);
+      generateTerrain();
+      // Rebuild all currently loaded chunks
+      const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
+      for (const [cx, cz] of loaded) {
+        const ck = chunkKey(cx, cz);
+        const cur = chunks.get(ck);
+        if (cur && cur.group) scene.remove(cur.group);
+        chunks.delete(ck);
+        loadChunk(cx, cz);
+      }
+    });
+
+    /* =================================================================================================
+       Camera update with smoothing, fog control
+    =================================================================================================== */
     const camPos = new THREE.Vector3();
     const camTarget = new THREE.Vector3();
-    const CAM_LERP = 0.18;
+    let CAM_LERP = 0.18;
 
     function updateCamera() {
-      const { forward } = getFacingVectors();
       const target = player.position.clone();
-
       if (pov === "first") {
         const eye = target.clone().add(new THREE.Vector3(0, capsuleHeight * 0.35, 0));
-        const lookDir = new THREE.Vector3(forward.x, Math.sin(pitch), forward.z).normalize();
+        const look = new THREE.Vector3(Math.sin(-yaw), Math.sin(pitch), Math.cos(-yaw)).normalize();
         camPos.copy(eye);
-        camTarget.copy(eye).add(lookDir);
+        camTarget.copy(eye).add(look);
       } else {
-        const distance = 7.5;
-        const offX = Math.sin(yaw) * Math.cos(pitch) * distance;
-        const offZ = Math.cos(yaw) * Math.cos(pitch) * distance;
-        const offY = Math.sin(pitch) * distance * 0.6;
-        const desiredPos = target.clone().add(new THREE.Vector3(-offX, 1.6 + offY, -offZ));
-        camPos.lerp(desiredPos, CAM_LERP);
+        const d = 8.2;
+        const offX = Math.sin(yaw) * Math.cos(pitch) * d;
+        const offZ = Math.cos(yaw) * Math.cos(pitch) * d;
+        const offY = Math.sin(pitch) * d * 0.6;
+        const desired = target.clone().add(new THREE.Vector3(-offX, 1.6 + offY, -offZ));
+        camPos.lerp(desired, CAM_LERP);
         camTarget.lerp(target.clone().add(new THREE.Vector3(0, 1.2, 0)), CAM_LERP);
       }
-
       camera.position.copy(camPos);
       camera.lookAt(camTarget);
     }
 
-    // ---------- Main loop ----------
+    function updateFog(distance) {
+      if (distance > 0) {
+        scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
+      } else {
+        scene.fog = null;
+      }
+    }
+    updateFog(600);
+
+    /* =================================================================================================
+       HUD, stats, minimap
+    =================================================================================================== */
+    const fpsEl = document.getElementById("fps");
+    const drawCallsEl = document.getElementById("drawCalls");
+    const blocksVisibleEl = document.getElementById("blocksVisible");
+    const chunksLoadedEl = document.getElementById("chunksLoaded");
+    const posEl = document.getElementById("pos");
+    const anglesEl = document.getElementById("angles");
+
+    const minimapCanvas = document.getElementById("minimapCanvas");
+    const mmCtx = minimapCanvas.getContext("2d");
+
+    function updateHudChunkStats() {
+      let count = 0;
+      let blocksVisible = 0;
+      for (const data of chunks.values()) {
+        count++;
+        blocksVisible += data.count || 0;
+      }
+      chunksLoadedEl.textContent = count.toString();
+      blocksVisibleEl.textContent = blocksVisible.toString();
+      drawCallsEl.textContent = (count * 3).toString(); // 3 instanced meshes per chunk
+    }
+
+    let fpsAvg = 0;
+    let lastFpsUpdate = 0;
+
+    function updateHUD(now) {
+      if (now - lastFpsUpdate > 250) {
+        fpsEl.textContent = Math.round(fpsAvg).toString();
+        lastFpsUpdate = now;
+      }
+      posEl.textContent = `${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)}`;
+      anglesEl.textContent = `${(yaw*180/Math.PI).toFixed(1)}°, ${(pitch*180/Math.PI).toFixed(1)}°`;
+    }
+
+    function drawMinimap() {
+      const show = document.getElementById("minimapToggle").checked;
+      document.getElementById("minimap").style.display = show ? "grid" : "none";
+      if (!show) return;
+
+      mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+      mmCtx.fillStyle = "#0d1420";
+      mmCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+
+      const scale = minimapCanvas.width / (VIEW_RADIUS * 2 * CHUNK_SIZE + CHUNK_SIZE);
+      const cx = Math.floor(player.position.x / CHUNK_SIZE);
+      const cz = Math.floor(player.position.z / CHUNK_SIZE);
+
+      mmCtx.strokeStyle = "rgba(255,255,255,0.25)";
+      mmCtx.strokeRect(0,0,minimapCanvas.width,minimapCanvas.height);
+
+      // Draw chunk squares
+      mmCtx.fillStyle = "rgba(90,160,255,0.20)";
+      for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
+        for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
+          const x = (dx + VIEW_RADIUS) * CHUNK_SIZE * scale;
+          const z = (dz + VIEW_RADIUS) * CHUNK_SIZE * scale;
+          mmCtx.fillRect(x, z, CHUNK_SIZE * scale, CHUNK_SIZE * scale);
+        }
+      }
+
+      // Player marker
+      mmCtx.fillStyle = "#ff4444";
+      const px = (player.position.x - (cx - VIEW_RADIUS) * CHUNK_SIZE) * scale;
+      const pz = (player.position.z - (cz - VIEW_RADIUS) * CHUNK_SIZE) * scale;
+      mmCtx.beginPath();
+      mmCtx.arc(px, pz, 3, 0, Math.PI*2);
+      mmCtx.fill();
+
+      // Direction arrow
+      mmCtx.strokeStyle = "#ff4444";
+      mmCtx.beginPath();
+      mmCtx.moveTo(px, pz);
+      mmCtx.lineTo(px + Math.sin(-yaw) * 10, pz + Math.cos(-yaw) * 10);
+      mmCtx.stroke();
+    }
+
+    /* =================================================================================================
+       Settings panel bindings
+    =================================================================================================== */
+    const viewRadiusSlider = document.getElementById("viewRadiusSlider");
+    const viewRadiusLabel  = document.getElementById("viewRadiusLabel");
+    const chunkSizeSlider  = document.getElementById("chunkSizeSlider");
+    const chunkSizeLabel   = document.getElementById("chunkSizeLabel");
+    const heightSlider     = document.getElementById("heightSlider");
+    const heightLabel      = document.getElementById("heightLabel");
+    const fogSlider        = document.getElementById("fogSlider");
+    const fogLabel         = document.getElementById("fogLabel");
+    const aaToggle         = document.getElementById("aaToggle");
+    const shadowToggle     = document.getElementById("shadowToggle");
+
+    viewRadiusSlider.addEventListener("input", () => {
+      VIEW_RADIUS = parseInt(viewRadiusSlider.value, 10);
+      viewRadiusLabel.textContent = VIEW_RADIUS.toString();
+      lastChunkUpdate = 0; // force chunk window refresh
+    });
+
+    chunkSizeSlider.addEventListener("input", () => {
+      const newSize = parseInt(chunkSizeSlider.value, 10);
+      chunkSizeLabel.textContent = newSize.toString();
+      if (newSize !== CHUNK_SIZE) {
+        CHUNK_SIZE = newSize;
+        // Clear loaded chunks; they'll reload on next updateVisibleChunks
+        for (const [ck, data] of chunks) {
+          if (data.group) scene.remove(data.group);
+          chunks.delete(ck);
+        }
+        lastChunkUpdate = 0;
+      }
+    });
+
+    heightSlider.addEventListener("input", () => {
+      const newH = parseInt(heightSlider.value, 10);
+      heightLabel.textContent = newH.toString();
+      MAX_HEIGHT = newH;
+      generateTerrain();
+      // Rebuild currently loaded chunks
+      const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
+      for (const [cx, cz] of loaded) {
+        const ck = chunkKey(cx, cz);
+        const cur = chunks.get(ck);
+        if (cur && cur.group) scene.remove(cur.group);
+        chunks.delete(ck);
+        loadChunk(cx, cz);
+      }
+    });
+
+    fogSlider.addEventListener("input", () => {
+      const dist = parseInt(fogSlider.value, 10);
+      fogLabel.textContent = dist.toString();
+      updateFog(dist);
+    });
+
+    aaToggle.addEventListener("change", () => {
+      ANTIALIAS = aaToggle.checked;
+      // Recreate renderer
+      renderer.dispose();
+      const canvasOld = renderer.domElement;
+      canvasOld.parentNode.removeChild(canvasOld);
+
+      const newRenderer = new THREE.WebGLRenderer({ antialias: ANTIALIAS, powerPreference: "high-performance" });
+      newRenderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(newRenderer.domElement);
+
+      renderer = newRenderer;
+      // Re-bind pointer lock mousemove below (listener uses renderer.domElement)
+      bindPointerLockMouseMove();
+    });
+
+    shadowToggle.addEventListener("change", () => {
+      const enable = shadowToggle.checked;
+      dir.intensity = enable ? 0.45 : 0.0;
+      renderer.shadowMap.enabled = enable;
+      player.castShadow = enable;
+      player.receiveShadow = false;
+      for (const data of chunks.values()) {
+        if (!data.meshes) continue;
+        for (const mesh of [data.meshes.grass, data.meshes.dirt, data.meshes.stone]) {
+          if (mesh) {
+            mesh.castShadow = false; // keep off to reduce cost
+            mesh.receiveShadow = enable;
+          }
+        }
+      }
+    });
+
+    /* =================================================================================================
+       Desktop controls and pointer lock
+    =================================================================================================== */
+    const keys = new Set();
+    window.addEventListener('keydown', e => {
+      keys.add(e.code);
+      if (e.code === "Space") jumpBtn.click();
+    });
+    window.addEventListener('keyup', e => keys.delete(e.code));
+
+    let pointerLockEnabled = false;
+    function enablePointerLock() {
+      const c = renderer.domElement;
+      if (c.requestPointerLock) c.requestPointerLock();
+    }
+    document.addEventListener('pointerlockchange', () => {
+      pointerLockEnabled = (document.pointerLockElement === renderer.domElement);
+    });
+
+    // Double-click to toggle pointer lock
+    let lastClick = 0;
+    renderer.domElement.addEventListener('click', () => {
+      const now = performance.now();
+      if (now - lastClick < 300) enablePointerLock();
+      lastClick = now;
+    });
+
+    function bindPointerLockMouseMove() {
+      renderer.domElement.addEventListener('mousemove', e => {
+        if (!pointerLockEnabled) return;
+        const dx = e.movementX || 0;
+        const dy = e.movementY || 0;
+        yaw -= dx * 0.0025;
+        pitch -= dy * 0.0025;
+        pitch = clamp(pitch, -Math.PI/3, Math.PI/3);
+      });
+    }
+    bindPointerLockMouseMove();
+
+    function desktopControlsToJoystick() {
+      let x = 0, y = 0; // x=strife, y=forward/back
+      if (keys.has("KeyA")) x -= 1;
+      if (keys.has("KeyD")) x += 1;
+      if (keys.has("KeyW")) y += 1;
+      if (keys.has("KeyS")) y -= 1;
+      const len = Math.hypot(x, y); if (len > 0) { x /= len; y /= len; }
+      joyInput.x = x; joyInput.y = y;
+      // Visual stick mirrors keyboard input
+      stick.style.left = (41 + x * JOY_RADIUS) + "px";
+      stick.style.top  = (41 - y * JOY_RADIUS) + "px"; // invert visual Y to match screen
+      requestAnimationFrame(desktopControlsToJoystick);
+    }
+    desktopControlsToJoystick();
+
+    /* =================================================================================================
+       Main loop
+    =================================================================================================== */
     let lastTime = performance.now();
+    let frames = 0;
+    let lastFpsTime = performance.now();
+
     function animate() {
       requestAnimationFrame(animate);
       const now = performance.now();
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Load/unload visible 10x10 chunks around player (instanced)
-      updateVisibleChunks(player.position.x, player.position.z);
+      // Keep nearby chunks loaded (throttled)
+      updateVisibleChunks(player.position.x, player.position.z, now);
 
-      // Gravity
+      // Gravity and vertical motion
       playerVel.y -= GRAVITY * dt;
+      groundSnapAndDetect(dt);
 
-      // Movement
+      // Movement relative to rotation (forward/back/strafe aligned with yaw)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
-        .addScaledVector(right, joyVec.x)
-        .addScaledVector(forward, joyVec.y);
+        .addScaledVector(forward, joyInput.y)
+        .addScaledVector(right,   joyInput.x);
       if (moveDir.lengthSq() > 0) moveDir.normalize();
 
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
-      // Vertical: stable snap (no bounce)
-      groundSnapAndDetect(dt);
-
-      // Horizontal: X then Z resolution
+      // Horizontal separation: resolve X then Z axis to avoid jitter
       player.position.x += vx * dt;
       horizontalResolve('x');
 
       player.position.z += vz * dt;
       horizontalResolve('z');
 
-      // Bounds
-      player.position.x = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.x));
-      player.position.z = Math.max(capsuleRadius, Math.min(WORLD_SIZE - capsuleRadius, player.position.z));
+      // Floor safety and bounds
+      player.position.x = clamp(player.position.x, capsuleRadius, WORLD_SIZE - capsuleRadius);
+      player.position.z = clamp(player.position.z, capsuleRadius, WORLD_SIZE - capsuleRadius);
       if (player.position.y < capsuleHeight / 2) {
         player.position.y = capsuleHeight / 2;
         playerVel.y = 0;
         onGround = true;
       }
 
+      // Camera and UI
       updateCamera();
+      drawMinimap();
       renderer.render(scene, camera);
+
+      // FPS update (smoothed)
+      frames++;
+      const elapsed = now - lastFpsTime;
+      if (elapsed >= 500) {
+        fpsAvg = frames * 1000 / elapsed;
+        frames = 0;
+        lastFpsTime = now;
+      }
+      updateHUD(now);
     }
+
     animate();
 
-    // ---------- Resize ----------
+    /* =================================================================================================
+       Resize
+    =================================================================================================== */
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -592,37 +1073,22 @@
       recalcJoyCenter();
     });
 
-    // ---------- Desktop fallbacks (WASD + Space) ----------
-    const keys = new Set();
-    window.addEventListener('keydown', e => {
-      keys.add(e.code);
-      if (e.code === "Space") jumpBtn.click();
-    });
-    window.addEventListener('keyup', e => keys.delete(e.code));
-    function desktopControlsToJoystick() {
-      // Flip axes + invert to mirror touch logic:
-      // A/D are horizontal inputs -> affect forward/back (joyVec.y), inverted
-      // W/S are vertical inputs -> affect left/right (joyVec.x), inverted
-      let leftRight = 0, upDown = 0;
-      if (keys.has("KeyA")) leftRight -= 1;
-      if (keys.has("KeyD")) leftRight += 1;
-      if (keys.has("KeyW")) upDown += 1;
-      if (keys.has("KeyS")) upDown -= 1;
-
-      // Normalize
-      const len = Math.hypot(leftRight, upDown);
-      if (len > 0) { leftRight /= len; upDown /= len; }
-
-      joyVec.x = -upDown;     // W -> right, S -> left
-      joyVec.y = -leftRight;  // D -> backward, A -> forward
-
-      // Visual stick still follows standard axes for clarity
-      stick.style.left = (41 + leftRight * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + upDown * JOY_RADIUS) + "px";
-
-      requestAnimationFrame(desktopControlsToJoystick);
-    }
-    desktopControlsToJoystick();
+    /* =================================================================================================
+       Initial chunk window
+    =================================================================================================== */
+    (function preloadInitial() {
+      const cx = Math.floor(player.position.x / CHUNK_SIZE);
+      const cz = Math.floor(player.position.z / CHUNK_SIZE);
+      const maxCx = Math.ceil(WORLD_SIZE / CHUNK_SIZE) - 1;
+      const maxCz = Math.ceil(WORLD_SIZE / CHUNK_SIZE) - 1;
+      for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
+        for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
+          const ncx = cx + dx, ncz = cz + dz;
+          if (ncx < 0 || ncz < 0 || ncx > maxCx || ncz > maxCz) continue;
+          loadChunk(ncx, ncz);
+        }
+      }
+    })();
   </script>
 </body>
 </html>
