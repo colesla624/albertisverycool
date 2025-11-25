@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — 10x10 Chunks, Capsule, Joystick, Stable Collisions</title>
+  <title>Minecraft-like Game — Inverted Joystick, Low-Lag Chunks (Instanced)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -146,7 +146,7 @@
     const WORLD_SIZE = 200;
     const MAX_HEIGHT = 20;
     const CHUNK_SIZE = 10;    // 10x10 blocks per chunk
-    const VIEW_RADIUS = 4;    // chunks radius to load around player
+    const VIEW_RADIUS = 4;    // chunk radius to load around player
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
@@ -176,16 +176,17 @@
       }
     }
 
-    // Visible chunk meshes
-    const chunks = new Map(); // "cx,cz" -> { group, count }
+    // Visible chunk meshes using InstancedMesh (low draw calls)
+    const chunks = new Map(); // "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
 
-    function buildChunkMesh(cx, cz) {
+    function buildChunkInstanced(cx, cz) {
       const group = new THREE.Group();
-      let count = 0;
       const startX = cx * CHUNK_SIZE;
       const startZ = cz * CHUNK_SIZE;
 
+      // Collect block transforms per material
+      const grass = [], dirt = [], stone = [];
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           const wx = startX + lx;
@@ -193,27 +194,51 @@
           for (let y = 0; y <= MAX_HEIGHT; y++) {
             const type = getBlock(wx,y,wz);
             if (!type) continue;
-            const mat = type === "grass" ? matGrass : (type === "dirt" ? matDirt : matStone);
-            const mesh = new THREE.Mesh(blockGeo, mat);
-            mesh.position.set(wx + 0.5, y + 0.5, wz + 0.5);
-            mesh.userData = { x: wx, y, z: wz };
-            group.add(mesh);
-            count++;
+            const pos = new THREE.Vector3(wx + 0.5, y + 0.5, wz + 0.5);
+            if (type === "grass") grass.push(pos);
+            else if (type === "dirt") dirt.push(pos);
+            else stone.push(pos);
           }
         }
       }
-      return { group, count };
+
+      const meshes = {};
+      const m = new THREE.Matrix4();
+      let count = 0;
+
+      function makeInstanced(arr, mat, label) {
+        if (!arr.length) return null;
+        const inst = new THREE.InstancedMesh(blockGeo, mat, arr.length);
+        const map = []; // instanceId -> {x,y,z}
+        for (let i = 0; i < arr.length; i++) {
+          m.makeTranslation(arr[i].x, arr[i].y, arr[i].z);
+          inst.setMatrixAt(i, m);
+          map[i] = { x: Math.floor(arr[i].x - 0.5), y: Math.floor(arr[i].y - 0.5), z: Math.floor(arr[i].z - 0.5) };
+        }
+        inst.instanceMatrix.needsUpdate = true;
+        inst.userData.instanceMap = map;
+        inst.userData.label = label;
+        group.add(inst);
+        return inst;
+      }
+
+      meshes.grass = makeInstanced(grass, matGrass, "grass");
+      meshes.dirt  = makeInstanced(dirt,  matDirt,  "dirt");
+      meshes.stone = makeInstanced(stone, matStone, "stone");
+
+      count = grass.length + dirt.length + stone.length;
+      return { group, meshes, count };
     }
 
     function loadChunk(cx, cz) {
       const ck = chunkKey(cx, cz);
       if (chunks.has(ck)) return;
-      const { group, count } = buildChunkMesh(cx, cz);
-      if (count > 0) {
-        scene.add(group);
-        chunks.set(ck, { group, count });
+      const built = buildChunkInstanced(cx, cz);
+      if (built.count > 0) {
+        scene.add(built.group);
+        chunks.set(ck, built);
       } else {
-        chunks.set(ck, { group: null, count: 0 });
+        chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
     }
 
@@ -245,20 +270,20 @@
       unloadFarChunks(cx, cz);
     }
 
-    function rebuildBlockMesh(x, y, z) {
+    function rebuildChunkAtBlock(x, y, z) {
       const cx = Math.floor(x / CHUNK_SIZE);
       const cz = Math.floor(z / CHUNK_SIZE);
       const ck = chunkKey(cx, cz);
       const cur = chunks.get(ck);
-      if (!cur) return; // chunk not visible; will build when in range
+      if (!cur) return; // not visible now
 
       if (cur.group) scene.remove(cur.group);
-      const rebuilt = buildChunkMesh(cx, cz);
+      const rebuilt = buildChunkInstanced(cx, cz);
       if (rebuilt.count > 0) {
         scene.add(rebuilt.group);
         chunks.set(ck, rebuilt);
       } else {
-        chunks.set(ck, { group: null, count: 0 });
+        chunks.set(ck, { group: null, meshes: {}, count: 0 });
       }
     }
 
@@ -366,18 +391,23 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    // ---------- Raycasting against visible chunk meshes ----------
+    // ---------- Raycasting against visible InstancedMeshes ----------
     const raycaster = new THREE.Raycaster();
+    function collectVisibleInstanced() {
+      const arr = [];
+      for (const { meshes } of chunks.values()) {
+        if (!meshes) continue;
+        if (meshes.grass) arr.push(meshes.grass);
+        if (meshes.dirt)  arr.push(meshes.dirt);
+        if (meshes.stone) arr.push(meshes.stone);
+      }
+      return arr;
+    }
     function getCenterRayHit() {
       const ndc = new THREE.Vector2(0, 0);
       raycaster.setFromCamera(ndc, camera);
-      const visibleMeshes = [];
-      for (const { group } of chunks.values()) {
-        if (!group) continue;
-        for (const child of group.children) visibleMeshes.push(child);
-      }
-      const hits = raycaster.intersectObjects(visibleMeshes, false);
-      return hits.length ? hits[0] : null;
+      const hits = raycaster.intersectObjects(collectVisibleInstanced(), false);
+      return hits.length ? hits[0] : null; // has instanceId for InstancedMesh
     }
 
     function placeBlockAtAim() {
@@ -388,14 +418,18 @@
       const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
       if (x < 0 || z < 0 || x >= WORLD_SIZE || z >= WORLD_SIZE || y < 0 || y > MAX_HEIGHT + 20) return;
       setBlock(x,y,z,"grass");
-      rebuildBlockMesh(x,y,z);
+      rebuildChunkAtBlock(x,y,z);
     }
     function deleteBlockAtAim() {
       const hit = getCenterRayHit();
       if (!hit) return;
-      const { x, y, z } = hit.object.userData;
+      const inst = hit.object;
+      const id = hit.instanceId;
+      const map = inst.userData.instanceMap;
+      if (!map || id == null) return;
+      const { x, y, z } = map[id];
       clearBlock(x,y,z);
-      rebuildBlockMesh(x,y,z);
+      rebuildChunkAtBlock(x,y,z);
     }
     placeBtn.addEventListener("click", placeBlockAtAim);
     deleteBtn.addEventListener("click", deleteBlockAtAim);
@@ -512,7 +546,7 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Load/unload visible 10x10 chunks around player
+      // Load/unload visible 10x10 chunks around player (instanced)
       updateVisibleChunks(player.position.x, player.position.z);
 
       // Gravity
