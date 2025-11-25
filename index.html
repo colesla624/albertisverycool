@@ -2,12 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like — Full build (~1000 lines), alternative joystick movement, instanced chunks, closable settings, smaller tracker</title>
+  <title>Minecraft-like — Full build (~1000+ lines), alternative joystick movement, instanced chunks, closable settings, smaller tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+
   <style>
-    /* ===============================================================================================
+    /* =================================================================================================
        Base theme and global layout
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Dark theme for better contrast against bright skybox and UI
+       - Box sizing set to border-box for consistent layout behavior
+       - Prevent page scroll; the canvas is the primary viewport
+       - Use system fonts for good performance on mobile and desktop
+       ================================================================================================= */
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     html, body {
@@ -22,9 +28,13 @@
     }
     canvas { display: block; }
 
-    /* ===============================================================================================
+    /* =================================================================================================
        Interactive buttons
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Minimal glass-style buttons
+       - Hover effect for desktop
+       - Ensure pointer usability on mobile with proper hit areas
+       ================================================================================================= */
     .btn {
       padding: 10px 14px;
       background: rgba(30,30,30,0.65);
@@ -38,7 +48,13 @@
       cursor: pointer;
     }
     .btn:hover { filter: brightness(1.08); }
-    #povBtn { position: absolute; top: 12px; left: 12px; z-index: 10; }
+
+    #povBtn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+    }
 
     #uiRight {
       position: absolute;
@@ -49,11 +65,20 @@
       gap: 12px;
       z-index: 10;
     }
-    #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
-    /* ===============================================================================================
+    #jumpBtn {
+      position: absolute;
+      right: 14px;
+      bottom: 20px;
+      z-index: 10;
+    }
+
+    /* =================================================================================================
        Crosshair (center of screen)
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Simple plus crosshair to align raycasts and block placement interaction
+       - Non-interactive pointer events for performance and behavior
+       ================================================================================================= */
     #crosshair {
       position: absolute;
       top: 50%;
@@ -73,12 +98,14 @@
     #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
     #crosshair::after  { width: 20px; height: 2px; left: 0; top: 9px; }
 
-    /* ===============================================================================================
-       Alternative movement joystick (ring + wedge directions)
+    /* =================================================================================================
+       Alternative movement joystick (ring + puck)
+       -------------------------------------------------------------------------------------------------
        - Big outer ring with a smaller puck
-       - Optional 8-way wedge snapping
+       - Optional 8-way wedge snapping (via settings toggle)
        - Built with pure DOM, no canvas
-    =============================================================================================== */
+       - Movement maps to player-relative forward/back/strafe using yaw
+       ================================================================================================= */
     #moveJoystick {
       position: absolute;
       bottom: 24px;
@@ -105,9 +132,12 @@
       touch-action: none;
     }
 
-    /* ===============================================================================================
+    /* =================================================================================================
        Right-side camera joystick (smaller, optional)
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Small ring to control yaw/pitch with smooth deltas
+       - Puck returns to center on release
+       ================================================================================================= */
     #lookJoystick {
       position: absolute;
       bottom: 24px;
@@ -126,7 +156,7 @@
     #lookPuck {
       position: absolute;
       width: 52px; height: 52px;
-      left: 44px; top: 44px;
+      left: 44px; top: 44px; /* centered initially (140-52)/2 = 44 */
       border-radius: 50%;
       background: linear-gradient(180deg, rgba(255,180,180,0.65), rgba(200,90,90,0.65));
       border: 2px solid rgba(255,255,255,0.35);
@@ -134,11 +164,12 @@
       touch-action: none;
     }
 
-    /* ===============================================================================================
+    /* =================================================================================================
        Closable settings panel
+       -------------------------------------------------------------------------------------------------
        - Per request: button to close panel
-       - No top-right stats HUD
-    =============================================================================================== */
+       - No top-right stats HUD; panel focuses on toggles
+       ================================================================================================= */
     #panel {
       position: absolute;
       left: 12px;
@@ -174,9 +205,12 @@
       margin-top: 10px;
     }
 
-    /* ===============================================================================================
+    /* =================================================================================================
        Minimap (player tracker) — smaller per request
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Pixelated scaling for retro vibe
+       - Player marker reflects yaw direction
+       ================================================================================================= */
     #minimap {
       position: absolute;
       right: 14px;
@@ -199,9 +233,11 @@
       border-radius: 8px;
     }
 
-    /* ===============================================================================================
+    /* =================================================================================================
        Helper tip
-    =============================================================================================== */
+       -------------------------------------------------------------------------------------------------
+       - Small footer help text to explain interactions
+       ================================================================================================= */
     .tip {
       position: absolute;
       left: 50%;
@@ -219,9 +255,12 @@
   </style>
 </head>
 <body>
-  <!-- =============================================================================================
+  <!-- =================================================================================================
        UI elements
-  ============================================================================================= -->
+       -------------------------------------------------------------------------------------------------
+       - Core controls and panels
+       - Movement and look joysticks
+       ================================================================================================= -->
   <div id="crosshair"></div>
 
   <button id="povBtn" class="btn">POV: Third</button>
@@ -239,7 +278,7 @@
     <div id="movePuck"></div>
   </div>
 
-  <!-- Right-side look joystick (optional; camera control) -->
+  <!-- Right-side look joystick (camera control) -->
   <div id="lookJoystick">
     <div id="lookPuck"></div>
   </div>
@@ -299,16 +338,22 @@
 
   <div id="minimap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
 
-  <div class="tip">Double-click the game for mouse look. Left ring joystick moves. Right ring joystick looks.</div>
+  <div class="tip">Double-click for mouse look. Left ring joystick moves. Right ring joystick looks. Place/Delete to modify blocks.</div>
 
-  <!-- =============================================================================================
+  <!-- =================================================================================================
        Scripts
-  ============================================================================================= -->
+       -------------------------------------------------------------------------------------------------
+       - Three.js and the full game logic
+       ================================================================================================= -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
-    /* =============================================================================================
+    /* =================================================================================================
        Utilities: seeded noise and math helpers
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Mulberry32 PRNG for deterministic randomness
+       - Simple Perlin-like 2D noise for terrain height
+       - Clamp and vector helpers
+       ================================================================================================= */
     function mulberry32(seed) {
       return function() {
         let t = seed += 0x6D2B79F5;
@@ -362,9 +407,13 @@
       return { x: Math.cos(snappedAng), y: Math.sin(snappedAng) };
     }
 
-    /* =============================================================================================
+    /* =================================================================================================
        Scene, camera, renderer
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Perspective camera
+       - High-performance WebGLRenderer
+       - Hemisphere light + optional shadowed directional light
+       ================================================================================================= */
     let ANTIALIAS = true;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
@@ -379,9 +428,12 @@
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    /* =============================================================================================
+    /* =================================================================================================
        World parameters and materials
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Tunable chunk size and view radius
+       - Simple Lambert materials per block type
+       ================================================================================================= */
     let WORLD_SIZE = 320;   // square world size in blocks
     let MAX_HEIGHT = 22;    // max terrain height
     let CHUNK_SIZE = 12;    // blocks per chunk side
@@ -393,9 +445,12 @@
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    /* =============================================================================================
+    /* =================================================================================================
        World storage and terrain generation (sparse map)
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Keyed by "x,y,z" for simplicity in this prototype
+       - Noise-based terrain with grass/dirt/stone stratification
+       ================================================================================================= */
     let noise = makeNoise2D(SEED);
     let SCALE = 0.06;
 
@@ -421,9 +476,12 @@
     }
     generateTerrain();
 
-    /* =============================================================================================
+    /* =================================================================================================
        Chunk management with InstancedMesh (low draw calls)
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Each chunk creates up to three InstancedMesh (grass/dirt/stone)
+       - Simple visibility by radius; unload far chunks
+       ================================================================================================= */
     const chunks = new Map(); // key "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
 
@@ -537,9 +595,13 @@
       }
     }
 
-    /* =============================================================================================
+    /* =================================================================================================
        Player and collision handling
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Capsule player proxy for collision bounds
+       - Gravity and simple ground snap detection
+       - Axis-separated horizontal collision resolution
+       ================================================================================================= */
     const capsuleRadius = 0.4;
     const capsuleMid = 1.0;
     const capsuleHeight = capsuleMid + 2 * capsuleRadius;
@@ -643,22 +705,25 @@
       }
     }
 
-    /* =============================================================================================
+    /* =================================================================================================
        Alternative joysticks: movement ring and look ring
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Movement input vector (moveInput) drives player translation
+       - Look input vector (lookInput) drives yaw/pitch deltas with smoothing
+       - Re-centering on touchend for both pucks
+       ================================================================================================= */
     const moveJoystick = document.getElementById("moveJoystick");
     const movePuck = document.getElementById("movePuck");
     const lookJoystick = document.getElementById("lookJoystick");
     const lookPuck = document.getElementById("lookPuck");
 
-    // Movement input vector (aligned to player yaw inside main loop)
-    let moveInput = { x: 0, y: 0 };
-    let lookInput = { x: 0, y: 0 }; // camera yaw/pitch deltas
+    let moveInput = { x: 0, y: 0 }; // movement vector, normalized
+    let lookInput = { x: 0, y: 0 }; // camera look deltas, -1..1
 
-    // Joystick radii and center caches
+    // Centers and radius for both joysticks
     let moveCenter = { x: 0, y: 0 }, lookCenter = { x: 0, y: 0 };
-    const moveRadiusPx = 76; // effective travel for puck inside 180px ring ((180-64)/2 = 58). Allow slight overflow, clamp later
-    const lookRadiusPx = 58; // inside 140px ring ((140-52)/2 = 44). Allow bit larger, clamp
+    const moveRadiusPx = 76; // effective travel inside 180px ring
+    const lookRadiusPx = 58; // effective travel inside 140px ring
 
     function recalcCenters(){
       const mRect = moveJoystick.getBoundingClientRect();
@@ -677,7 +742,6 @@
       const px = cx + Math.cos(ang) * len;
       const py = cy + Math.sin(ang) * len;
 
-      // Position el relative to joystick container
       const rect = el.parentElement.getBoundingClientRect();
       el.style.left = (px - rect.left - el.offsetWidth/2) + "px";
       el.style.top  = (py - rect.top  - el.offsetHeight/2) + "px";
@@ -724,7 +788,6 @@
     }
     function onMoveEnd(){
       moveInput.x = 0; moveInput.y = 0;
-      // Reset puck to center
       movePuck.style.left = "58px";
       movePuck.style.top  = "58px";
     }
@@ -762,9 +825,11 @@
     lookJoystick.addEventListener("touchmove",  onLookMove,  { passive: true });
     lookJoystick.addEventListener("touchend",   onLookEnd,   { passive: true });
 
-    /* =============================================================================================
+    /* =================================================================================================
        Touch drag rotation on empty areas (exclude both joysticks)
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Allows camera rotation even without look joystick
+       ================================================================================================= */
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
       if (e.target.closest("#moveJoystick") || e.target.closest("#lookJoystick")) return;
@@ -787,9 +852,11 @@
 
     document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
 
-    /* =============================================================================================
+    /* =================================================================================================
        Buttons: POV toggle, Jump, Place/Delete, Reseed
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Simple handlers to change POV mode and modify the world using raycasting
+       ================================================================================================= */
     const povBtn    = document.getElementById("povBtn");
     const jumpBtn   = document.getElementById("jumpBtn");
     const placeBtn  = document.getElementById("placeBtn");
@@ -859,12 +926,18 @@
       }
     });
 
-    /* =============================================================================================
+    /* =================================================================================================
        Camera (first/third person) with smoothing
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Look joystick deltas applied each frame
+       - Third person with offset and smoothing lerp
+       ================================================================================================= */
     const camPos = new THREE.Vector3();
     const camTarget = new THREE.Vector3();
     let CAM_LERP = 0.18;
+
+    /* dtGlobal is updated in animate() and used here; we declare it above animate */
+    let dtGlobal = 0;
 
     function updateCamera() {
       // Apply look joystick deltas to yaw/pitch for smooth camera
@@ -893,9 +966,11 @@
       camera.lookAt(camTarget);
     }
 
-    /* =============================================================================================
+    /* =================================================================================================
        Fog control
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Adjustable fog distance via settings
+       ================================================================================================= */
     function updateFog(distance) {
       if (distance > 0) {
         scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
@@ -905,9 +980,12 @@
     }
     updateFog(700);
 
-    /* =============================================================================================
+    /* =================================================================================================
        Minimap (player tracker), smaller size
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Draw chunk grid tiles
+       - Draw player position and facing direction
+       ================================================================================================= */
     const minimapCanvas = document.getElementById("minimapCanvas");
     const mmCtx = minimapCanvas.getContext("2d");
 
@@ -937,7 +1015,7 @@
         }
       }
 
-      // Player marker (smaller radius due to smaller tracker)
+      // Player marker
       mmCtx.fillStyle = "#ff4444";
       const px = (player.position.x - (cx - VIEW_RADIUS) * CHUNK_SIZE) * scale;
       const pz = (player.position.z - (cz - VIEW_RADIUS) * CHUNK_SIZE) * scale;
@@ -953,9 +1031,12 @@
       mmCtx.stroke();
     }
 
-    /* =============================================================================================
+    /* =================================================================================================
        Settings bindings (incl. close/open panel button)
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Live updates of chunk/view/fog/etc.
+       - Toggle shadows and antialias by rebuilding renderer or toggling flags
+       ================================================================================================= */
     const viewRadiusSlider = document.getElementById("viewRadiusSlider");
     const viewRadiusLabel  = document.getElementById("viewRadiusLabel");
     const chunkSizeSlider  = document.getElementById("chunkSizeSlider");
@@ -1026,7 +1107,6 @@
 
     aaToggle.addEventListener("change", () => {
       ANTIALIAS = aaToggle.checked;
-      // Recreate renderer
       renderer.dispose();
       const old = renderer.domElement;
       old.parentNode.removeChild(old);
@@ -1054,9 +1134,12 @@
       }
     });
 
-    /* =============================================================================================
+    /* =================================================================================================
        Desktop controls and pointer lock (optional)
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Map WASD to movement vector for parity with touch movement ring
+       - Double-click toggles pointer lock
+       ================================================================================================= */
     const keys = new Set();
     window.addEventListener('keydown', e => {
       keys.add(e.code);
@@ -1073,7 +1156,6 @@
       pointerLockEnabled = (document.pointerLockElement === renderer.domElement);
     });
 
-    // Double-click to toggle pointer lock
     let lastClick = 0;
     renderer.domElement.addEventListener('click', () => {
       const now = performance.now();
@@ -1102,7 +1184,6 @@
       if (keys.has("KeyS")) y -= 1;
       const len = Math.hypot(x, y); if (len > 0) { x /= len; y /= len; }
       moveInput.x = x; moveInput.y = y;
-      // Visual puck mirrors keyboard input
       const dx = x * moveRadiusPx;
       const dy = -y * moveRadiusPx; // invert visual Y to match screen orientation
       setPuck(movePuck, moveCenter.x, moveCenter.y, dx, dy, moveRadiusPx);
@@ -1110,11 +1191,13 @@
     }
     desktopControlsToMoveRing();
 
-    /* =============================================================================================
+    /* =================================================================================================
        Main loop: physics, chunk updates, movement, camera, render
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - The critical spot where joystick values are consumed:
+         moveInput drives movement; lookInput drives yaw/pitch
+       ================================================================================================= */
     let lastTime = performance.now();
-    let dtGlobal = 0;
 
     function animate() {
       requestAnimationFrame(animate);
@@ -1132,8 +1215,8 @@
       // Movement relative to rotation (forward/back/strafe aligned with yaw)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
-        .addScaledVector(forward, moveInput.y)
-        .addScaledVector(right,   moveInput.x);
+        .addScaledVector(forward, moveInput.y)   // <-- use moveInput.y (forward/back)
+        .addScaledVector(right,   moveInput.x);  // <-- use moveInput.x (strafe)
       if (moveDir.lengthSq() > 0) moveDir.normalize();
 
       const vx = moveDir.x * MOVE_SPEED;
@@ -1162,9 +1245,12 @@
     }
     animate();
 
-    /* =============================================================================================
+    /* =================================================================================================
        Resize handler
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Keep aspect ratio and renderer size in sync
+       - Recompute joystick centers
+       ================================================================================================= */
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -1172,9 +1258,11 @@
       recalcCenters();
     });
 
-    /* =============================================================================================
+    /* =================================================================================================
        Initial chunk preload around player for fast first frame
-    ============================================================================================= */
+       -------------------------------------------------------------------------------------------------
+       - Load chunks in the view radius immediately
+       ================================================================================================= */
     (function preloadInitial() {
       const cx = Math.floor(player.position.x / CHUNK_SIZE);
       const cz = Math.floor(player.position.z / CHUNK_SIZE);
