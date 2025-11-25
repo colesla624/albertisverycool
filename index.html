@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like Game — 10x10 Chunks</title>
+  <title>Minecraft-like Game — 10x10 Chunks, Capsule, Joystick, Stable Collisions</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -97,7 +97,7 @@
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
       };
     }
-    function makeNoise2D(seed = 12345) {
+    function makeNoise2D(seed = 1337) {
       const rand = mulberry32(seed);
       const perm = new Uint8Array(512);
       for (let i = 0; i < 256; i++) perm[i] = i;
@@ -106,15 +106,15 @@
         [perm[i], perm[j]] = [perm[j], perm[i]];
       }
       for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];
-      function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-      function lerp(a, b, t) { return a + t * (b - a); }
-      function grad(hash, x, y) {
+      function fade(t){ return t*t*t*(t*(t*6-15)+10); }
+      function lerp(a,b,t){ return a + t*(b-a); }
+      function grad(hash,x,y){
         const h = hash & 3;
         const u = h < 2 ? x : y;
         const v = h < 2 ? y : x;
         return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
       }
-      return function(x, y) {
+      return function(x,y){
         const X = Math.floor(x) & 255;
         const Y = Math.floor(y) & 255;
         x -= Math.floor(x);
@@ -124,8 +124,7 @@
         const ab = perm[X + perm[Y + 1]];
         const ba = perm[X + 1 + perm[Y]];
         const bb = perm[X + 1 + perm[Y + 1]];
-        return lerp(lerp(grad(aa, x, y), grad(ba, x - 1, y), u),
-                    lerp(grad(ab, x, y - 1), grad(bb, x - 1, y - 1), u), v);
+        return lerp(lerp(grad(aa,x,y),grad(ba,x-1,y),u), lerp(grad(ab,x,y-1),grad(bb,x-1,y-1),u), v);
       };
     }
 
@@ -143,27 +142,28 @@
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    // ---------- World and chunks ----------
-    const WORLD_SIZE = 200;     // logical world extent
+    // ---------- World and chunked loading (10x10) ----------
+    const WORLD_SIZE = 200;
     const MAX_HEIGHT = 20;
-    const CHUNK_SIZE = 10;      // 10x10 blocks per chunk (x,z)
-    const VIEW_RADIUS = 4;      // chunk radius around player to keep loaded
+    const CHUNK_SIZE = 10;    // 10x10 blocks per chunk
+    const VIEW_RADIUS = 4;    // chunks radius to load around player
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    // World data: sparse dictionary of blocks
-    const world = new Map(); // key "x,y,z" -> type
-    function k(x,y,z){ return `${x},${y},${z}`; }
-    function getBlock(x,y,z){ return world.get(k(x,y,z)); }
-    function setBlock(x,y,z,type){ world.set(k(x,y,z), type); }
-    function clearBlock(x,y,z){ world.delete(k(x,y,z)); }
-
-    // Generate terrain in data only (no meshes yet)
     const noise = makeNoise2D(1337);
     const SCALE = 0.06;
+
+    // Sparse world data
+    const world = new Map(); // "x,y,z" -> type
+    function K(x,y,z){ return `${x},${y},${z}`; }
+    function getBlock(x,y,z){ return world.get(K(x,y,z)); }
+    function setBlock(x,y,z,type){ world.set(K(x,y,z), type); }
+    function clearBlock(x,y,z){ world.delete(K(x,y,z)); }
+
+    // Generate terrain (data only)
     for (let x = 0; x < WORLD_SIZE; x++) {
       for (let z = 0; z < WORLD_SIZE; z++) {
         const nx = x * SCALE, nz = z * SCALE;
@@ -176,8 +176,8 @@
       }
     }
 
-    // Chunks: load/unload visible groups
-    const chunks = new Map(); // key "cx,cz" -> { group, count }
+    // Visible chunk meshes
+    const chunks = new Map(); // "cx,cz" -> { group, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
 
     function buildChunkMesh(cx, cz) {
@@ -202,7 +202,6 @@
           }
         }
       }
-
       return { group, count };
     }
 
@@ -246,13 +245,12 @@
       unloadFarChunks(cx, cz);
     }
 
-    // Rebuild a single block in its chunk (after place/delete)
     function rebuildBlockMesh(x, y, z) {
       const cx = Math.floor(x / CHUNK_SIZE);
       const cz = Math.floor(z / CHUNK_SIZE);
       const ck = chunkKey(cx, cz);
       const cur = chunks.get(ck);
-      if (!cur) return; // chunk not visible: no need now
+      if (!cur) return; // chunk not visible; will build when in range
 
       if (cur.group) scene.remove(cur.group);
       const rebuilt = buildChunkMesh(cx, cz);
@@ -291,7 +289,7 @@
       return { forward, right };
     }
 
-    // ---------- Joystick (inverted forward/backward) ----------
+    // ---------- Joystick (moving circle + inverted controls) ----------
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
     let joyVec = { x: 0, y: 0 };
@@ -311,10 +309,15 @@
       const dy = t.clientY - joyCenter.y;
       const dist = Math.min(Math.hypot(dx, dy), JOY_RADIUS);
       const angle = Math.atan2(dy, dx);
+
       const rawX = Math.cos(angle) * (dist / JOY_RADIUS);
       const rawY = Math.sin(angle) * (dist / JOY_RADIUS);
+
+      // Inverted: up = backward, down = forward
       joyVec.x = rawX;
-      joyVec.y = -rawY; // invert forward/backward
+      joyVec.y = -rawY;
+
+      // Move the visual stick
       stick.style.left = (41 + rawX * JOY_RADIUS) + "px";
       stick.style.top  = (41 + rawY * JOY_RADIUS) + "px";
     }
@@ -363,7 +366,7 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    // ---------- Raycasting: only visible chunk meshes ----------
+    // ---------- Raycasting against visible chunk meshes ----------
     const raycaster = new THREE.Raycaster();
     function getCenterRayHit() {
       const ndc = new THREE.Vector2(0, 0);
