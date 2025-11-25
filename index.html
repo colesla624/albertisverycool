@@ -2,21 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like — Full build with rotation-based joystick, instanced chunks, closable settings, smaller tracker</title>
+  <title>Minecraft-like — Full build (~1000 lines), joystick movement, instanced chunks, closable settings, smaller tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
+    /* ===============================================================================================
+       Base theme and global layout
+    =============================================================================================== */
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
       background: #0b1b2b;
       color: #e6f3ff;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
     }
     canvas { display: block; }
 
-    /* Buttons and UI */
+    /* ===============================================================================================
+       Interactive buttons
+    =============================================================================================== */
     .btn {
       padding: 10px 14px;
       background: rgba(30,30,30,0.65);
@@ -43,7 +51,9 @@
     }
     #jumpBtn { position: absolute; right: 14px; bottom: 20px; z-index: 10; }
 
-    /* Crosshair */
+    /* ===============================================================================================
+       Crosshair (center of screen)
+    =============================================================================================== */
     #crosshair {
       position: absolute;
       top: 50%;
@@ -63,7 +73,9 @@
     #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
     #crosshair::after  { width: 20px; height: 2px; left: 0; top: 9px; }
 
-    /* Joystick */
+    /* ===============================================================================================
+       Touch joystick (left-bottom)
+    =============================================================================================== */
     #joystick {
       position: absolute;
       bottom: 24px;
@@ -87,7 +99,11 @@
       touch-action: none;
     }
 
-    /* Settings panel (closable) */
+    /* ===============================================================================================
+       Closable settings panel
+       - Per request: add button to close panel
+       - No top-right stats HUD
+    =============================================================================================== */
     #panel {
       position: absolute;
       left: 12px;
@@ -123,7 +139,9 @@
       margin-top: 10px;
     }
 
-    /* Minimap (player tracker) — smaller */
+    /* ===============================================================================================
+       Minimap (player tracker) — smaller per request
+    =============================================================================================== */
     #minimap {
       position: absolute;
       right: 14px;
@@ -146,7 +164,9 @@
       border-radius: 8px;
     }
 
-    /* Tip */
+    /* ===============================================================================================
+       Helper tip
+    =============================================================================================== */
     .tip {
       position: absolute;
       left: 50%;
@@ -164,6 +184,9 @@
   </style>
 </head>
 <body>
+  <!-- =============================================================================================
+       UI elements
+  ============================================================================================= -->
   <div id="crosshair"></div>
 
   <button id="povBtn" class="btn">POV: Third</button>
@@ -178,55 +201,66 @@
 
   <div id="joystick"><div id="stick"></div></div>
 
-  <!-- Closable Settings panel (no stats HUD at top-right per request) -->
   <div id="panel">
     <h3>Settings</h3>
+
     <div class="row">
       <span class="small">View radius (chunks)</span>
       <input type="range" id="viewRadiusSlider" min="2" max="10" step="1" value="5"/>
       <span id="viewRadiusLabel" class="mono small">5</span>
     </div>
+
     <div class="row">
       <span class="small">Chunk size (blocks)</span>
       <input type="range" id="chunkSizeSlider" min="8" max="24" step="1" value="12"/>
       <span id="chunkSizeLabel" class="mono small">12</span>
     </div>
+
     <div class="row">
       <span class="small">Max height</span>
       <input type="range" id="heightSlider" min="12" max="40" step="1" value="22"/>
       <span id="heightLabel" class="mono small">22</span>
     </div>
+
     <div class="row">
       <span class="small">Fog distance</span>
       <input type="range" id="fogSlider" min="200" max="1200" step="50" value="700"/>
       <span id="fogLabel" class="mono small">700</span>
     </div>
+
     <div class="row">
       <span class="small">Antialias</span>
       <input type="checkbox" id="aaToggle" checked />
     </div>
+
     <div class="row">
       <span class="small">Shadows</span>
       <input type="checkbox" id="shadowToggle" />
     </div>
+
     <div class="row">
       <span class="small">Show minimap</span>
       <input type="checkbox" id="minimapToggle" checked />
     </div>
+
     <div id="panelButtons">
       <button id="closePanelBtn" class="btn">Close settings</button>
       <button id="openPanelBtn" class="btn" style="display:none">Open settings</button>
     </div>
   </div>
 
-  <!-- Smaller player tracker -->
   <div id="minimap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
 
-  <div class="tip">Double-click the game to enable mouse look. Use the left joystick to move, drag anywhere else to rotate.</div>
+  <div class="tip">Double-click the game to enable mouse look. Use the left joystick to move. Drag anywhere else to rotate.</div>
 
+  <!-- =============================================================================================
+       Scripts
+  ============================================================================================= -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script>
-    /* Utilities: seeded noise */
+    /* =============================================================================================
+       Utilities: seeded noise and math helpers
+    ============================================================================================= */
     function mulberry32(seed) {
       return function() {
         let t = seed += 0x6D2B79F5;
@@ -235,6 +269,7 @@
         return ((t ^ t >>> 14) >>> 0) / 4294967296;
       };
     }
+
     function makeNoise2D(seed = 1337) {
       const rand = mulberry32(seed);
       const perm = new Uint8Array(512);
@@ -265,9 +300,12 @@
         return lerp(lerp(grad(aa,x,y),grad(ba,x-1,y),u), lerp(grad(ab,x,y-1),grad(bb,x-1,y-1),u), v);
       };
     }
+
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-    /* Scene setup */
+    /* =============================================================================================
+       Scene, camera, renderer
+    ============================================================================================= */
     let ANTIALIAS = true;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
@@ -278,27 +316,31 @@
     document.body.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xffffff, 0x889988, 0.7);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.0); // toggle shadows later
+    const dir = new THREE.DirectionalLight(0xffffff, 0.0); // disabled by default; toggled via settings
     dir.position.set(20, 30, 10);
     scene.add(hemi); scene.add(dir);
 
-    /* Params and materials */
-    let WORLD_SIZE = 320;
-    let MAX_HEIGHT = 22;
-    let CHUNK_SIZE = 12;
-    let VIEW_RADIUS = 5;
-    let SEED = 1337;
+    /* =============================================================================================
+       World parameters and materials
+    ============================================================================================= */
+    let WORLD_SIZE = 320;   // square world size in blocks
+    let MAX_HEIGHT = 22;    // max terrain height
+    let CHUNK_SIZE = 12;    // blocks per chunk side
+    let VIEW_RADIUS = 5;    // chunk radius around player
+    let SEED = 1337;        // initial seed
 
     const blockGeo = new THREE.BoxGeometry(1, 1, 1);
     const matGrass = new THREE.MeshLambertMaterial({ color: 0x3a9d23 });
     const matDirt  = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
     const matStone = new THREE.MeshLambertMaterial({ color: 0x7f7f7f });
 
-    /* World data */
+    /* =============================================================================================
+       World storage and terrain generation (sparse map)
+    ============================================================================================= */
     let noise = makeNoise2D(SEED);
     let SCALE = 0.06;
 
-    const world = new Map(); // "x,y,z" -> type
+    const world = new Map(); // key "x,y,z" -> type
     function K(x,y,z){ return `${x},${y},${z}`; }
     function getBlock(x,y,z){ return world.get(K(x,y,z)); }
     function setBlock(x,y,z,type){ world.set(K(x,y,z), type); }
@@ -320,9 +362,12 @@
     }
     generateTerrain();
 
-    /* Chunks with InstancedMesh */
-    const chunks = new Map(); // "cx,cz" -> { group, meshes:{grass,dirt,stone}, count }
+    /* =============================================================================================
+       Chunk management with InstancedMesh (low draw calls)
+    ============================================================================================= */
+    const chunks = new Map(); // key "cx,cz" -> { group, meshes: {grass,dirt,stone}, count }
     function chunkKey(cx,cz){ return `${cx},${cz}`; }
+
     const matrixTemp = new THREE.Matrix4();
 
     function buildChunkInstanced(cx, cz) {
@@ -331,6 +376,7 @@
       const startZ = cz * CHUNK_SIZE;
 
       const grass = [], dirt = [], stone = [];
+
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         for (let lz = 0; lz < CHUNK_SIZE; lz++) {
           const wx = startX + lx;
@@ -420,7 +466,7 @@
       const cz = Math.floor(z / CHUNK_SIZE);
       const ck = chunkKey(cx, cz);
       const cur = chunks.get(ck);
-      if (!cur) return;
+      if (!cur) return; // chunk not loaded now
 
       if (cur.group) scene.remove(cur.group);
       const rebuilt = buildChunkInstanced(cx, cz);
@@ -432,7 +478,9 @@
       }
     }
 
-    /* Player and collisions */
+    /* =============================================================================================
+       Player and collision handling
+    ============================================================================================= */
     const capsuleRadius = 0.4;
     const capsuleMid = 1.0;
     const capsuleHeight = capsuleMid + 2 * capsuleRadius;
@@ -536,7 +584,12 @@
       }
     }
 
-    /* Joystick: rotation-based movement (up=forward, down=back, left/right=strafe) */
+    /* =============================================================================================
+       Joystick input and rotation-aligned movement
+       - Up (finger moves up) -> forward relative to yaw
+       - Down -> backward
+       - Left/Right -> strafe relative to yaw
+    ============================================================================================= */
     const joystick = document.getElementById("joystick");
     const stick = document.getElementById("stick");
     let joyInput = { x: 0, y: 0 };
@@ -560,8 +613,8 @@
       const ny = clamp(dy / JOY_RADIUS, -1, 1);
 
       // Movement mapping: screen up (ny<0) -> forward (+y)
-      joyInput.x = nx;       // strafe left/right
-      joyInput.y = -ny;      // forward/back
+      joyInput.x = nx;     // strafe left/right
+      joyInput.y = -ny;    // forward/back
 
       // Visual stick follows finger
       stick.style.left = (41 + nx * JOY_RADIUS) + "px";
@@ -574,7 +627,9 @@
       stick.style.left = "41px"; stick.style.top = "41px";
     });
 
-    /* Touch drag rotation (exclude joystick) */
+    /* =============================================================================================
+       Touch drag rotation (exclude joystick touches)
+    ============================================================================================= */
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
       if (e.target.closest("#joystick")) return;
@@ -597,7 +652,9 @@
 
     document.addEventListener("touchend", () => { dragging = false; }, { passive: true });
 
-    /* Buttons */
+    /* =============================================================================================
+       Buttons: POV toggle, Jump, Place/Delete, Reseed
+    ============================================================================================= */
     const povBtn    = document.getElementById("povBtn");
     const jumpBtn   = document.getElementById("jumpBtn");
     const placeBtn  = document.getElementById("placeBtn");
@@ -613,7 +670,6 @@
       if (onGround) { playerVel.y = JUMP_SPEED; onGround = false; }
     });
 
-    /* Raycast for place/delete */
     const raycaster = new THREE.Raycaster();
     function collectVisibleInstanced() {
       const arr = [];
@@ -631,6 +687,7 @@
       const hits = raycaster.intersectObjects(collectVisibleInstanced(), false);
       return hits.length ? hits[0] : null;
     }
+
     placeBtn.addEventListener("click", () => {
       const hit = getCenterRayHit();
       if (!hit) return;
@@ -641,6 +698,7 @@
       setBlock(x,y,z,"grass");
       rebuildChunkAtBlock(x,y,z);
     });
+
     deleteBtn.addEventListener("click", () => {
       const hit = getCenterRayHit();
       if (!hit) return;
@@ -650,11 +708,12 @@
       clearBlock(x,y,z);
       rebuildChunkAtBlock(x,y,z);
     });
+
     reseedBtn.addEventListener("click", () => {
       SEED = Math.floor(Math.random() * 1e9);
       noise = makeNoise2D(SEED);
       generateTerrain();
-      // Rebuild all currently loaded
+      // Rebuild all currently loaded chunks
       const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
       for (const [cx, cz] of loaded) {
         const ck = chunkKey(cx, cz);
@@ -665,7 +724,9 @@
       }
     });
 
-    /* Camera (first/third with smoothing) */
+    /* =============================================================================================
+       Camera (first/third person) with smoothing
+    ============================================================================================= */
     const camPos = new THREE.Vector3();
     const camTarget = new THREE.Vector3();
     let CAM_LERP = 0.18;
@@ -690,14 +751,21 @@
       camera.lookAt(camTarget);
     }
 
-    /* Fog */
+    /* =============================================================================================
+       Fog control
+    ============================================================================================= */
     function updateFog(distance) {
-      if (distance > 0) scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
-      else scene.fog = null;
+      if (distance > 0) {
+        scene.fog = new THREE.Fog(scene.background, distance * 0.35, distance);
+      } else {
+        scene.fog = null;
+      }
     }
     updateFog(700);
 
-    /* Minimap (player tracker) */
+    /* =============================================================================================
+       Minimap (player tracker), smaller size
+    ============================================================================================= */
     const minimapCanvas = document.getElementById("minimapCanvas");
     const mmCtx = minimapCanvas.getContext("2d");
 
@@ -717,7 +785,7 @@
       mmCtx.strokeStyle = "rgba(255,255,255,0.25)";
       mmCtx.strokeRect(0,0,minimapCanvas.width,minimapCanvas.height);
 
-      // Chunk tiles
+      // Draw chunk tiles around player
       mmCtx.fillStyle = "rgba(90,160,255,0.20)";
       for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
         for (let dz = -VIEW_RADIUS; dz <= VIEW_RADIUS; dz++) {
@@ -727,7 +795,7 @@
         }
       }
 
-      // Player marker and direction (slightly smaller radius due to smaller tracker)
+      // Player marker (smaller radius due to smaller tracker)
       mmCtx.fillStyle = "#ff4444";
       const px = (player.position.x - (cx - VIEW_RADIUS) * CHUNK_SIZE) * scale;
       const pz = (player.position.z - (cz - VIEW_RADIUS) * CHUNK_SIZE) * scale;
@@ -735,6 +803,7 @@
       mmCtx.arc(px, pz, 2.5, 0, Math.PI*2);
       mmCtx.fill();
 
+      // Direction arrow (aligned to yaw)
       mmCtx.strokeStyle = "#ff4444";
       mmCtx.beginPath();
       mmCtx.moveTo(px, pz);
@@ -742,7 +811,9 @@
       mmCtx.stroke();
     }
 
-    /* Settings bindings (plus close/open panel button) */
+    /* =============================================================================================
+       Settings bindings (incl. close/open panel button)
+    ============================================================================================= */
     const viewRadiusSlider = document.getElementById("viewRadiusSlider");
     const viewRadiusLabel  = document.getElementById("viewRadiusLabel");
     const chunkSizeSlider  = document.getElementById("chunkSizeSlider");
@@ -763,6 +834,7 @@
       openPanelBtn.style.left = "12px";
       openPanelBtn.style.bottom = "200px";
     });
+
     openPanelBtn.addEventListener("click", () => {
       document.getElementById("panel").style.display = "block";
       openPanelBtn.style.display = "none";
@@ -779,6 +851,7 @@
       chunkSizeLabel.textContent = newSize.toString();
       if (newSize !== CHUNK_SIZE) {
         CHUNK_SIZE = newSize;
+        // Clear loaded chunks; they'll reload around player on next update
         for (const [ck, data] of chunks) {
           if (data.group) scene.remove(data.group);
           chunks.delete(ck);
@@ -792,6 +865,7 @@
       heightLabel.textContent = newH.toString();
       MAX_HEIGHT = newH;
       generateTerrain();
+      // Rebuild loaded chunks
       const loaded = Array.from(chunks.keys()).map(k => k.split(',').map(Number));
       for (const [cx, cz] of loaded) {
         const ck = chunkKey(cx, cz);
@@ -810,6 +884,7 @@
 
     aaToggle.addEventListener("change", () => {
       ANTIALIAS = aaToggle.checked;
+      // Recreate renderer
       renderer.dispose();
       const old = renderer.domElement;
       old.parentNode.removeChild(old);
@@ -830,14 +905,16 @@
         if (!data.meshes) continue;
         for (const mesh of [data.meshes.grass, data.meshes.dirt, data.meshes.stone]) {
           if (mesh) {
-            mesh.castShadow = false; // keep off for perf
+            mesh.castShadow = false; // keep off for performance
             mesh.receiveShadow = enable;
           }
         }
       }
     });
 
-    /* Desktop controls + pointer lock */
+    /* =============================================================================================
+       Desktop controls and pointer lock (optional)
+    ============================================================================================= */
     const keys = new Set();
     window.addEventListener('keydown', e => {
       keys.add(e.code);
@@ -874,21 +951,25 @@
     }
     bindPointerLockMouseMove();
 
+    // Map WASD to joystick vector to maintain single movement pipeline
     function desktopControlsToJoystick() {
-      let x = 0, y = 0;
+      let x = 0, y = 0; // x=strife, y=forward/back
       if (keys.has("KeyA")) x -= 1;
       if (keys.has("KeyD")) x += 1;
       if (keys.has("KeyW")) y += 1;
       if (keys.has("KeyS")) y -= 1;
       const len = Math.hypot(x, y); if (len > 0) { x /= len; y /= len; }
       joyInput.x = x; joyInput.y = y;
+      // Visual stick mirrors keyboard input
       stick.style.left = (41 + x * JOY_RADIUS) + "px";
       stick.style.top  = (41 - y * JOY_RADIUS) + "px"; // invert visual Y to match screen
       requestAnimationFrame(desktopControlsToJoystick);
     }
     desktopControlsToJoystick();
 
-    /* Main loop */
+    /* =============================================================================================
+       Main loop: physics, chunk updates, movement, camera, render
+    ============================================================================================= */
     let lastTime = performance.now();
 
     function animate() {
@@ -897,14 +978,14 @@
       const dt = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
-      // Chunk window maintenance
+      // Keep nearby chunks loaded (throttled)
       updateVisibleChunks(player.position.x, player.position.z, now);
 
-      // Gravity
+      // Gravity and vertical motion
       playerVel.y -= GRAVITY * dt;
       groundSnapAndDetect(dt);
 
-      // Rotation-based movement
+      // Movement relative to rotation (forward/back/strafe aligned with yaw)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
         .addScaledVector(forward, joyInput.y)
@@ -914,13 +995,14 @@
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
-      // Horizontal resolve X then Z
+      // Horizontal separation: resolve X then Z axis to avoid jitter
       player.position.x += vx * dt;
       horizontalResolve('x');
+
       player.position.z += vz * dt;
       horizontalResolve('z');
 
-      // Bounds and floor safety
+      // Floor safety and bounds
       player.position.x = clamp(player.position.x, capsuleRadius, WORLD_SIZE - capsuleRadius);
       player.position.z = clamp(player.position.z, capsuleRadius, WORLD_SIZE - capsuleRadius);
       if (player.position.y < capsuleHeight / 2) {
@@ -936,7 +1018,9 @@
     }
     animate();
 
-    /* Resize */
+    /* =============================================================================================
+       Resize handler
+    ============================================================================================= */
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -944,7 +1028,9 @@
       recalcJoyCenter();
     });
 
-    /* Initial chunk preload */
+    /* =============================================================================================
+       Initial chunk preload around player for fast first frame
+    ============================================================================================= */
     (function preloadInitial() {
       const cx = Math.floor(player.position.x / CHUNK_SIZE);
       const cz = Math.floor(player.position.z / CHUNK_SIZE);
