@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voxel Builder Game</title>
+    <title>Voxel Builder Game - High Friction (Snappy Stop)</title>
     <!-- Load Tailwind CSS for easy UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Three.js for 3D rendering (r128 is stable and compatible with custom capsule implementation) -->
+    <!-- Load Three.js for 3D rendering (r128) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         /* Custom CSS for the canvas and overall layout */
@@ -80,18 +80,18 @@
             </div>
         </div>
         
-        <!-- View Toggle Button (New!) -->
+        <!-- View Toggle Button -->
         <button id="view-toggle-btn" class="absolute top-4 right-4 action-btn bg-purple-500 hover:bg-purple-600 active:bg-purple-700 p-3 text-sm z-30 w-32 h-12">
             Toggle View (FP)
         </button>
 
 
-        <!-- Fixed Joystick Base (Now always visible) -->
+        <!-- Fixed Joystick Base (Mobile) -->
         <div id="joystick-base"></div>
-        <!-- Dynamic Joystick Handle (Now always available) -->
+        <!-- Dynamic Joystick Handle (Mobile) -->
         <div id="joystick-handle"></div>
 
-        <!-- Mobile Action Buttons (Right Side, now always visible) -->
+        <!-- Mobile Action Buttons (Right Side) -->
         <div id="action-buttons" class="absolute bottom-6 right-6 flex flex-col space-y-4 z-20">
             <!-- Jump Button -->
             <button id="jump-btn" class="action-btn w-16 h-16 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-3xl">
@@ -110,148 +110,364 @@
     </div>
 
     <script type="module">
-        // Global Three.js variables
+        // --- Core Global Variables ---
         let scene, camera, renderer;
-        
-        // Player visualization model
         let playerModel; 
+        let worldMesh; 
         
-        let controls = { 
-            forward: 0, 
-            backward: 0, 
-            left: 0, 
-            right: 0, 
-            up: false, 
-            down: false 
-        };
+        // Block data storage: key -> blockType (used for collision and world generation)
+        const worldBlockData = new Map(); 
         
-        // Player state object to hold position and rotation
+        // --- Physics & Player Constants ---
+        const GRAVITY = 0.0185;         
+        const TERMINAL_VELOCITY = 0.5;  
+        const JUMP_VELOCITY = 0.2;    
+        
+        // --- Movement Constants for Acceleration ---
+        const MAX_WALK_SPEED = 0.20;    // Maximum speed the player can reach
+        const ACCELERATION = 0.008;     // Rate at which velocity increases
+        const FRICTION = 0.4;           // <<<<<<<< UPDATED: Rate at which velocity decreases (low value = snappy stop)
+        
+        // Player's velocity vector (how much the player moves each frame)
+        let velocity = new THREE.Vector3(0, 0, 0); 
+        
+        // Player Collision Box (AABB)
+        const playerHeight = 1.8;
+        const playerRadius = 0.3; // Half width/depth of the AABB
+        const playerYOffset = -1.7; // Head position (player.position.y) to feet
+        
+        // Player state and constants
         const player = {
-            position: new THREE.Vector3(0, 5, 0),
-            // Player rotation is only for the direction of movement (Y-axis)
+            position: new THREE.Vector3(0, 10, 0), 
             rotationY: 0, 
+            onGround: false,
         };
+        const lookSpeed = 0.003; 
+
+        // World Generation Constants
+        const WORLD_SIZE = 64; 
+        const MAX_HEIGHT = 16;
         
-        // Camera state for TP orbiting
+        // Block Definitions (Materials and properties)
+        const blockTypes = {
+            GRASS: { name: 'Grass', color: 0x4CAF50 },
+            DIRT: { name: 'Dirt', color: 0x795548 },
+            STONE: { name: 'Stone', color: 0x78909C },
+            WOOD: { name: 'Wood', color: 0x8D6E63 },
+        };
+        let activeBlockType = blockTypes.WOOD;
+        
+        // Standard block geometry (1 unit cube)
+        const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+        
+        // Faces used for generating the merged mesh
+        const CUBE_FACES = [
+            { dir: [1, 0, 0], face: 0, normal: [1, 0, 0] },  
+            { dir: [-1, 0, 0], face: 1, normal: [-1, 0, 0] }, 
+            { dir: [0, 1, 0], face: 2, normal: [0, 1, 0] },  
+            { dir: [0, -1, 0], face: 3, normal: [0, -1, 0] }, 
+            { dir: [0, 0, 1], face: 4, normal: [0, 0, 1] },  
+            { dir: [0, 0, -1], face: 5, normal: [0, 0, -1] } 
+        ];
+        
+        // --- Control Variables ---
+        let controls = { forward: 0, backward: 0, left: 0, right: 0, up: false, down: false };
         let isThirdPerson = false;
         const thirdPersonDistance = 3.5; 
         const thirdPersonHeightOffset = 1.0; 
-        
-        // Camera look angles (used for both FP and TP look control)
-        const cameraLook = {
-            yaw: 0, // Y-axis rotation (horizontal)
-            pitch: 0, // X-axis rotation (vertical)
-        };
-        
-        // Joystick state (now fixed position)
-        const joystick = {
-            active: false,
-            touchId: null,
-            base: document.getElementById('joystick-base'),
-            handle: document.getElementById('joystick-handle'),
-            baseX: 0, 
-            baseY: 0,
-            radius: 60, 
-            maxDistance: 40 
-        };
-
-        // State tracker for the camera 'look' touch interaction
+        const cameraLook = { yaw: 0, pitch: 0 };
+        const joystick = { active: false, touchId: null, base: document.getElementById('joystick-base'), handle: document.getElementById('joystick-handle'), baseX: 0, baseY: 0, radius: 60, maxDistance: 40 };
         let activeLookTouch = null; 
 
-        const blockMap = new Map();
+        // --- Three.js Setup and Helpers ---
         const raycaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, 0, -1), 0, 10);
-        const playerSpeed = 0.08;
-        const lookSpeed = 0.003; 
-        const blockTypes = {
-            GRASS: { name: 'Grass', color: 0x4CAF50, geometry: new THREE.BoxGeometry(1, 1, 1), material: new THREE.MeshLambertMaterial({ color: 0x4CAF50 }) },
-            DIRT: { name: 'Dirt', color: 0x795548, geometry: new THREE.BoxGeometry(1, 1, 1), material: new THREE.MeshLambertMaterial({ color: 0x795548 }) },
-            STONE: { name: 'Stone', color: 0x78909C, geometry: new THREE.BoxGeometry(1, 1, 1), material: new THREE.MeshLambertMaterial({ color: 0x78909C }) },
-            WOOD: { name: 'Wood', color: 0x8D6E63, geometry: new THREE.BoxGeometry(1, 1, 1), material: new THREE.MeshLambertMaterial({ color: 0x8D6E63 }) },
-        };
-        let activeBlockType = blockTypes.WOOD;
 
-        /**
-         * Converts coordinates to a unique string key.
-         */
         function getKey(x, y, z) {
             return `${x},${y},${z}`;
         }
         
+        function isBlockAt(x, y, z) {
+            return worldBlockData.has(getKey(Math.floor(x), Math.floor(y), Math.floor(z)));
+        }
+
         /**
-         * Custom function to create a capsule geometry by combining a cylinder and two hemispheres (spheres).
-         * This ensures compatibility with older Three.js versions like r128 which lack THREE.CapsuleGeometry.
-         * Returns a THREE.Group representing the capsule.
+         * Creates a capsule geometry for the player model.
          */
-        function createCapsuleGeometry(radius, height, radialSegments, heightSegments) {
+        function createCapsuleGeometry(radius, height, radialSegments) {
             const cylinderHeight = height - (2 * radius);
+            const material = new THREE.MeshStandardMaterial({ color: 0x33AFFF });
             
-            // 1. Create Cylinder
-            const cylinder = new THREE.CylinderGeometry(
-                radius, radius, cylinderHeight, radialSegments, heightSegments
-            );
-            const cylinderMesh = new THREE.Mesh(cylinder);
+            const cylinder = new THREE.CylinderGeometry(radius, radius, cylinderHeight, radialSegments, 1);
+            const cylinderMesh = new THREE.Mesh(cylinder, material);
             
-            // 2. Top Sphere (Hemisphere equivalent)
-            const topMesh = new THREE.Mesh(new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2));
+            const topSphere = new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2);
+            const topMesh = new THREE.Mesh(topSphere, material);
             topMesh.position.y = cylinderHeight / 2;
 
-            // 3. Bottom Sphere (Hemisphere equivalent)
-            const bottomMesh = new THREE.Mesh(new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2));
+            const bottomSphere = new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2);
+            const bottomMesh = new THREE.Mesh(bottomSphere, material);
             bottomMesh.position.y = -cylinderHeight / 2;
             
             const group = new THREE.Group();
             group.add(cylinderMesh, topMesh, bottomMesh);
+            
+            // This is the required offset to align the capsule's 'feet' with the origin (0, 0, 0) of the collision box.
+            group.traverse((child) => {
+                if (child.isMesh) {
+                    child.position.y += (height / 2) - radius; 
+                }
+            });
+            
             return group; 
         }
-
 
         /**
          * Creates and initializes the player visualization model.
          */
         function createPlayerModel() {
-            const radius = 0.3;
-            const height = 1.8;
-            const segments = 16;
-            
-            // Create the composite capsule model (Group)
-            const playerModelGroup = createCapsuleGeometry(radius, height, segments, 1);
-            
-            const material = new THREE.MeshStandardMaterial({ color: 0x33AFFF });
-            
-            // Apply the material to all parts of the group
-            playerModelGroup.traverse((child) => {
-                if (child.isMesh) {
-                    child.material = material;
-                    // Center the entire visual model group at Y=0 relative to the player.position (head height)
-                    child.position.y += (height / 2) - radius; 
-                }
-            });
-
-            // Player model group handles the position and overall rotation
             playerModel = new THREE.Group();
-            playerModel.add(playerModelGroup);
+            const capsuleVisual = createCapsuleGeometry(playerRadius, playerHeight, 16);
             
-            // Final position is set in init() and animate()
+            // Shift the visual model down 1.4 units relative to the head position (player.position) 
+            // to align the capsule base with the ground/collision box feet.
+            capsuleVisual.position.y = -1.4; 
+
+            playerModel.add(capsuleVisual);
+            
             playerModel.position.copy(player.position);
-            playerModel.visible = isThirdPerson; // Start hidden (FP)
+            playerModel.visible = isThirdPerson; 
             scene.add(playerModel);
         }
 
-        /**
-         * Calculates the fixed position of the joystick base center.
-         */
-        function calculateJoystickPosition() {
-            const rect = joystick.base.getBoundingClientRect();
-            joystick.baseX = rect.left + joystick.radius;
-            joystick.baseY = rect.top + joystick.radius;
+        // --- World Generation and Optimization (Unchanged) ---
+        
+        function getHeight(x, z) {
+            const baseHeight = 4;
+            const lowFreqNoise = Math.sin(x * 0.05) * 5 + Math.cos(z * 0.05) * 5;
+            const highFreqNoise = Math.sin(x * 0.2) * 2 + Math.cos(z * 0.2) * 2;
+            
+            let height = Math.floor(baseHeight + lowFreqNoise + highFreqNoise); 
+            height = Math.max(1, Math.min(MAX_HEIGHT, height)); 
+            return height;
+        }
 
-            joystick.handle.style.left = `${joystick.baseX - joystick.radius / 2}px`;
-            joystick.handle.style.top = `${joystick.baseY - joystick.radius / 2}px`;
+        function populateWorldData() {
+            worldBlockData.clear();
+            const offset = Math.floor(WORLD_SIZE / 2);
+
+            for (let x = -offset; x <= offset; x++) {
+                for (let z = -offset; z <= offset; z++) {
+                    
+                    const groundHeight = getHeight(x, z); 
+                    
+                    for (let y = 0; y < groundHeight; y++) {
+                        let type;
+                        if (y === groundHeight - 1) {
+                            type = blockTypes.GRASS; 
+                        } else if (y >= groundHeight - 4) {
+                            type = blockTypes.DIRT; 
+                        } else {
+                            type = blockTypes.STONE; 
+                        }
+                        worldBlockData.set(getKey(x, y, z), type);
+                    }
+                }
+            }
+        }
+
+        function generateStaticGroundMesh() {
+            const positions = [];
+            const colors = [];
+            const normals = [];
+
+            const tempBoxGeometry = blockGeometry.clone();
+
+            worldBlockData.forEach((type, key) => {
+                const [x, y, z] = key.split(',').map(Number);
+                const blockColor = new THREE.Color(type.color);
+                
+                CUBE_FACES.forEach(face => {
+                    const nx = x + face.dir[0];
+                    const ny = y + face.dir[1];
+                    const nz = z + face.dir[2];
+
+                    if (!isBlockAt(nx, ny, nz)) {
+                        tempBoxGeometry.translate(x + 0.5, y + 0.5, z + 0.5);
+                        
+                        const positionAttribute = tempBoxGeometry.attributes.position;
+                        const indexAttribute = tempBoxGeometry.index;
+                        
+                        const startIndex = face.face * 6; 
+                        
+                        for (let i = 0; i < 6; i++) {
+                            const vertexIndex = indexAttribute.getX(startIndex + i);
+                            
+                            positions.push(positionAttribute.getX(vertexIndex), positionAttribute.getY(vertexIndex), positionAttribute.getZ(vertexIndex));
+                            normals.push(face.normal[0], face.normal[1], face.normal[2]);
+                            colors.push(blockColor.r, blockColor.g, blockColor.b);
+                        }
+
+                        tempBoxGeometry.translate(-(x + 0.5), -(y + 0.5), -(z + 0.5));
+                    }
+                });
+            });
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); 
+
+            const material = new THREE.MeshPhongMaterial({ 
+                vertexColors: true, 
+                shininess: 0 
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.userData.isWorld = true; 
+            
+            return mesh;
+        }
+
+        function refreshWorldMesh() {
+            if (worldMesh) {
+                scene.remove(worldMesh);
+                worldMesh.geometry.dispose();
+            }
+            worldMesh = generateStaticGroundMesh();
+            scene.add(worldMesh);
+        }
+        
+        // --- Collision and Movement Logic (Unchanged) ---
+        
+        function isColliding(newPos) {
+            const minX = Math.floor(newPos.x - playerRadius);
+            const maxX = Math.floor(newPos.x + playerRadius);
+            
+            const minY = Math.floor(newPos.y + playerYOffset);
+            const maxY = Math.floor(newPos.y); 
+
+            const minZ = Math.floor(newPos.z - playerRadius);
+            const maxZ = Math.floor(newPos.z + playerRadius);
+
+            for (let x = minX; x <= maxX; x++) {
+                for (let y = minY; y <= maxY; y++) {
+                    for (let z = minZ; z <= maxZ; z++) {
+                        if (isBlockAt(x, y, z)) {
+                            return true; 
+                        }
+                    }
+                }
+            }
+            return false;
         }
 
         /**
-         * Initializes the 3D environment, scene, camera, and world.
+         * Collision resolution, now robustly preventing bounce or jitter on landing.
          */
+        function checkAndApplyMovement() {
+            // 1. Apply gravity
+            if (!player.onGround) {
+                velocity.y = Math.max(-TERMINAL_VELOCITY, velocity.y - GRAVITY);
+            }
+            
+            const delta = velocity.clone();
+
+            player.onGround = false;
+
+            // 2. Move X axis
+            player.position.x += delta.x;
+            if (isColliding(player.position)) {
+                player.position.x -= delta.x; 
+                velocity.x = 0;             
+            }
+
+            // 3. Move Y axis (Refactored for non-bouncy landing)
+            player.position.y += delta.y;
+            if (isColliding(player.position)) {
+                
+                if (delta.y < 0) {
+                    // Landing on floor: SNAP the position exactly to the top surface.
+                    const minYBlock = Math.floor(player.position.y + playerYOffset);
+                    player.position.y = (minYBlock + 1) - playerYOffset; 
+                    player.onGround = true; 
+                } else {
+                    // Hitting ceiling (delta.y > 0): Rollback the movement.
+                    player.position.y -= delta.y; 
+                }
+                
+                // Set velocity to zero for all Y-collisions (no bounce)
+                velocity.y = 0;             
+            }
+            
+            // 4. Move Z axis
+            player.position.z += delta.z;
+            if (isColliding(player.position)) {
+                player.position.z -= delta.z; 
+                velocity.z = 0;             
+            }
+        }
+        
+        // --- Block Manipulation (Unchanged) ---
+        
+        function mineBlock() {
+            const target = getTargetedBlock();
+            if (target) {
+                const key = getKey(target.x, target.y, target.z);
+                
+                if (worldBlockData.has(key)) {
+                    worldBlockData.delete(key);
+                    refreshWorldMesh(); 
+                }
+            }
+        }
+
+        function placeBlock() {
+            const target = getTargetedBlock();
+            if (target) {
+                const newX = target.x + Math.round(target.normal.x);
+                const newY = target.y + Math.round(target.normal.y);
+                const newZ = target.z + Math.round(target.normal.z);
+
+                const newBlockKey = getKey(newX, newY, newZ);
+                
+                const testPos = new THREE.Vector3(newX + 0.5, newY + playerHeight, newZ + 0.5); 
+                
+                // Check if the new block placement intersects with the player's current position
+                if (isColliding(testPos)) {
+                    return; 
+                }
+
+                if (!worldBlockData.has(newBlockKey)) {
+                    worldBlockData.set(newBlockKey, activeBlockType);
+                    refreshWorldMesh(); 
+                }
+            }
+        }
+
+        function getTargetedBlock() {
+            if (!worldMesh) return null;
+
+            raycaster.setFromCamera({ x: 0, y: 0 }, camera); 
+            const intersects = raycaster.intersectObject(worldMesh);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                
+                const x = Math.floor(intersect.point.x - intersect.face.normal.x * 0.01);
+                const y = Math.floor(intersect.point.y - intersect.face.normal.y * 0.01);
+                const z = Math.floor(intersect.point.z - intersect.face.normal.z * 0.01);
+
+                const normal = intersect.face.normal.clone();
+
+                return { x, y, z, normal };
+            }
+            return null;
+        }
+        
+        // --- Initialization and Game Loop ---
+
         function init() {
             const container = document.getElementById('game-container');
             const containerWidth = container.clientWidth || window.innerWidth;
@@ -272,218 +488,131 @@
             renderer.shadowMap.enabled = true;
             container.appendChild(renderer.domElement); 
 
-            // 4. Lighting
+            // 4. Lighting 
             const ambientLight = new THREE.AmbientLight(0x404040, 3); 
             scene.add(ambientLight);
-
             const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
             directionalLight.position.set(10, 20, 10);
             directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048; directionalLight.shadow.mapSize.height = 2048; 
+            directionalLight.shadow.camera.near = 0.5; directionalLight.shadow.camera.far = 50;
+            directionalLight.shadow.camera.left = -20; directionalLight.shadow.camera.right = 20;
+            directionalLight.shadow.camera.top = 20; directionalLight.shadow.camera.bottom = -20;
             scene.add(directionalLight);
 
-            // 5. Player Model and World
+            // 5. World Generation
+            populateWorldData(); 
+            refreshWorldMesh(); 
+
+            // 6. Player Model
             createPlayerModel();
-            generateWorld(16, 6);
 
-            // 6. Event Listeners
-            window.addEventListener('resize', () => {
-                onWindowResize();
-                calculateJoystickPosition(); 
-            });
+            // 7. Event Listeners
+            window.addEventListener('resize', () => { onWindowResize(); calculateJoystickPosition(); });
             setupInputListeners(container);
-
             calculateJoystickPosition(); 
             updateActiveBlockDisplay();
 
-            // 7. Start the game loop
+            // 8. Find a safe starting position above the generated terrain
+            player.position.y = getHeight(0, 0) + playerHeight + 2; 
+
+            // 9. Start the game loop
             animate();
         }
 
-        /**
-         * Generates a basic voxel world. 
-         */
-        function generateWorld(size, layers) {
-            const offset = Math.floor(size / 2);
-            for (let x = -offset; x <= offset; x++) {
-                for (let z = -offset; z <= offset; z++) {
-                    for (let y = 0; y < layers; y++) {
-                        let type;
-                        if (y === layers - 1) {
-                            type = blockTypes.GRASS;
-                        } else if (y >= layers - 3) {
-                            type = blockTypes.DIRT;
-                        } else {
-                            type = blockTypes.STONE;
-                        }
-                        addBlock(x, y, z, type);
-                    }
-                }
-            }
-        }
-
-        /**
-         * Adds a block mesh to the scene and the block map. 
-         */
-        function addBlock(x, y, z, type) {
-            const mesh = new THREE.Mesh(type.geometry, type.material);
-            mesh.position.set(x + 0.5, y + 0.5, z + 0.5); 
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            mesh.userData = { isBlock: true, type: type.name }; 
-            scene.add(mesh);
-            blockMap.set(getKey(x, y, z), mesh);
-        }
-
-        /**
-         * Removes a block mesh from the scene and the block map. 
-         */
-        function removeBlock(x, y, z) {
-            const key = getKey(x, y, z);
-            const mesh = blockMap.get(key);
-            if (mesh) {
-                scene.remove(mesh);
-                mesh.geometry.dispose();
-                mesh.material.dispose();
-                blockMap.delete(key);
-            }
-        }
-
-        /**
-         * Raycasts from the camera to find the targeted block. 
-         */
-        function getTargetedBlock() {
-            // Raycast direction is always forward from the camera's current rotation/view
-            raycaster.setFromCamera({ x: 0, y: 0 }, camera); 
-            const intersects = raycaster.intersectObjects(scene.children.filter(obj => obj.userData.isBlock));
-
-            if (intersects.length > 0) {
-                const intersect = intersects[0];
-                const blockMesh = intersect.object;
-                const x = Math.floor(blockMesh.position.x - 0.5);
-                const y = Math.floor(blockMesh.position.y - 0.5);
-                const z = Math.floor(blockMesh.position.z - 0.5);
-                const normal = intersect.face.normal.clone();
-
-                return { x, y, z, normal };
-            }
-            return null;
-        }
-
-        /**
-         * Mines (removes) the targeted block. 
-         */
-        function mineBlock() {
-            const target = getTargetedBlock();
-            if (target) {
-                removeBlock(target.x, target.y, target.z);
-            }
-        }
-
-        /**
-         * Places the active block adjacent to the targeted block. 
-         */
-        function placeBlock() {
-            const target = getTargetedBlock();
-            if (target) {
-                const newX = target.x + Math.round(target.normal.x);
-                const newY = target.y + Math.round(target.normal.y);
-                const newZ = target.z + Math.round(target.normal.z);
-
-                const playerBlockX = Math.floor(player.position.x);
-                const playerBlockYHead = Math.floor(player.position.y);
-                const playerBlockYFeet = Math.floor(player.position.y - 1.5);
-
-                const newBlockKey = getKey(newX, newY, newZ);
-                
-                // Check collision with player's head block and feet block
-                if (
-                    (newBlockKey !== getKey(playerBlockX, playerBlockYHead, Math.floor(player.position.z))) &&
-                    (newBlockKey !== getKey(playerBlockX, playerBlockYFeet, Math.floor(player.position.z))) &&
-                    !blockMap.has(newBlockKey)
-                ) {
-                    addBlock(newX, newY, newZ, activeBlockType);
-                }
-            }
-        }
-
-        /**
-         * Handles the main game loop and updates. 
-         */
         function animate() {
             requestAnimationFrame(animate);
 
-            // 1. Player Movement Update
-            const movementApplied = controls.forward > 0 || controls.backward > 0 || controls.left > 0 || controls.right > 0;
+            // 1. Calculate input force
+            const horizontalInputActive = controls.forward > 0 || controls.backward > 0 || controls.left > 0 || controls.right > 0;
             
-            // Get the direction the camera is looking (for TP movement)
             const cameraDirection = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, cameraLook.yaw, 0, 'YXZ'));
             cameraDirection.y = 0;
             cameraDirection.normalize();
 
-            // Calculate the right vector perpendicular to the camera's horizontal view
             const rightVector = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, cameraLook.yaw, 0, 'YXZ'));
             rightVector.y = 0;
             rightVector.normalize();
 
-            // Apply movement to player.position
-            if (controls.forward > 0) player.position.addScaledVector(cameraDirection, playerSpeed * controls.forward);
-            if (controls.backward > 0) player.position.addScaledVector(cameraDirection, -playerSpeed * controls.backward);
-            if (controls.right > 0) player.position.addScaledVector(rightVector, playerSpeed * controls.right);
-            if (controls.left > 0) player.position.addScaledVector(rightVector, -playerSpeed * controls.left);
-
-            // Update player Y rotation to face the direction of movement (TP aesthetics)
-            if (movementApplied) {
-                // If moving, calculate the desired forward vector from controls
-                const desiredDirection = new THREE.Vector3(0, 0, 0);
-                desiredDirection.addScaledVector(cameraDirection, controls.forward - controls.backward);
-                desiredDirection.addScaledVector(rightVector, controls.right - controls.left);
+            // 2. Set target velocity based on input (Applying Acceleration)
+            if (horizontalInputActive) {
+                const targetDirection = new THREE.Vector3();
                 
-                if (desiredDirection.lengthSq() > 0) {
-                    desiredDirection.normalize();
-                    // Calculate the angle to face the direction of movement
-                    const angle = Math.atan2(desiredDirection.x, desiredDirection.z);
+                targetDirection.addScaledVector(cameraDirection, (controls.forward - controls.backward));
+                targetDirection.addScaledVector(rightVector, (controls.right - controls.left));
+                
+                if (targetDirection.lengthSq() > 0) {
+                    targetDirection.normalize();
+                    
+                    // Apply acceleration (always pushes velocity toward target direction)
+                    velocity.x += targetDirection.x * ACCELERATION;
+                    velocity.z += targetDirection.z * ACCELERATION;
+
+                    // Cap speed at MAX_WALK_SPEED
+                    const currentSpeedSq = velocity.x * velocity.x + velocity.z * velocity.z;
+                    if (currentSpeedSq > MAX_WALK_SPEED * MAX_WALK_SPEED) {
+                        const currentSpeed = Math.sqrt(currentSpeedSq);
+                        const scaleFactor = MAX_WALK_SPEED / currentSpeed;
+                        velocity.x *= scaleFactor;
+                        velocity.z *= scaleFactor;
+                    }
+                }
+
+            } else if (player.onGround) {
+                // Apply friction for smooth deceleration when no keys are pressed
+                velocity.x *= FRICTION;
+                velocity.z *= FRICTION;
+                
+                // Stop completely when velocity is near zero
+                if (Math.abs(velocity.x) < 0.005) velocity.x = 0;
+                if (Math.abs(velocity.z) < 0.005) velocity.z = 0;
+            }
+
+            // 3. Handle Jump
+            if (controls.up && player.onGround) {
+                velocity.y = JUMP_VELOCITY;
+                player.onGround = false;
+                controls.up = false; 
+            }
+
+            // 4. Collision Detection and Movement Application
+            checkAndApplyMovement();
+
+
+            // 5. Update Player Model position and rotation
+            playerModel.position.copy(player.position);
+            if (horizontalInputActive) {
+                const horizontalVelocity = new THREE.Vector2(velocity.x, velocity.z);
+                if (horizontalVelocity.lengthSq() > 0.001) { 
+                    const angle = Math.atan2(horizontalVelocity.x, horizontalVelocity.y);
                     player.rotationY = angle;
                 }
             }
-            
-            // Jump/Up movement
-            if (controls.up) player.position.y += playerSpeed * 2; 
+            playerModel.rotation.y = player.rotationY; 
 
-            // Update Player Model position and rotation
-            playerModel.position.copy(player.position);
-            playerModel.rotation.y = player.rotationY; // Only rotate yaw for visible player model
-
-            // 2. Camera View Update
+            // 6. Camera View Update
             if (isThirdPerson) {
-                // Calculate camera position based on yaw and pitch
                 const radius = thirdPersonDistance;
-                
-                // Yaw is horizontal orbit, Pitch is vertical angle (clamped)
                 const pitch = cameraLook.pitch;
                 const yaw = cameraLook.yaw;
                 
-                // Spherical coordinates calculation
                 camera.position.x = player.position.x + radius * Math.sin(yaw) * Math.cos(pitch);
                 camera.position.y = player.position.y + thirdPersonHeightOffset + radius * Math.sin(pitch);
                 camera.position.z = player.position.z + radius * Math.cos(yaw) * Math.cos(pitch);
                 
-                // Camera always looks at the player's center mass
-                const targetPoint = player.position.clone().y += thirdPersonHeightOffset;
                 camera.lookAt(player.position.x, player.position.y + thirdPersonHeightOffset, player.position.z);
                 
             } else {
-                // First Person: Camera position and rotation follow player's state exactly
                 camera.position.copy(player.position);
                 camera.rotation.set(cameraLook.pitch, cameraLook.yaw, 0, 'YXZ');
             }
 
-            // 3. Rendering
+            // 7. Rendering
             renderer.render(scene, camera);
         }
 
-        /**
-         * Toggles between first-person and third-person view.
-         */
+        // --- UI and Input Handlers ---
+        
         function toggleView() {
             isThirdPerson = !isThirdPerson;
             const button = document.getElementById('view-toggle-btn');
@@ -494,19 +623,13 @@
             if (isThirdPerson) {
                 button.textContent = 'Toggle View (TP)';
                 crosshair.style.display = 'none'; 
-                // When entering TP, reset player rotation to match current camera yaw
-                // This ensures the player is facing where the camera is looking horizontally
                 player.rotationY = cameraLook.yaw; 
             } else {
                 button.textContent = 'Toggle View (FP)';
                 crosshair.style.display = 'block';
-                // When entering FP, the camera rotation (yaw/pitch) is already stored in cameraLook
             }
         }
         
-        /**
-         * Handles window resize for responsiveness. 
-         */
         function onWindowResize() {
             const container = document.getElementById('game-container');
             const containerWidth = container.clientWidth || window.innerWidth;
@@ -517,9 +640,15 @@
             renderer.setSize(containerWidth, containerHeight);
         }
 
-        /**
-         * Updates the position of the visual joystick handle and sets movement controls.
-         */
+        function calculateJoystickPosition() {
+            const rect = joystick.base.getBoundingClientRect();
+            joystick.baseX = rect.left + joystick.radius;
+            joystick.baseY = rect.top + joystick.radius;
+
+            joystick.handle.style.left = `${joystick.baseX - joystick.radius / 2}px`;
+            joystick.handle.style.top = `${joystick.baseY - joystick.radius / 2}px`;
+        }
+
         function updateJoystick(currentX, currentY) {
             const dx = currentX - joystick.baseX;
             const dy = currentY - joystick.baseY;
@@ -541,7 +670,6 @@
             joystick.handle.style.left = `${finalX - joystick.radius / 2}px`;
             joystick.handle.style.top = `${finalY - joystick.radius / 2}px`;
 
-            // Update movement controls magnitude
             const magnitude = distance / joystick.maxDistance; 
             const forwardComponent = -Math.sin(angle); 
             const rightComponent = Math.cos(angle); 
@@ -552,9 +680,6 @@
             controls.left = Math.max(0, -rightComponent) * magnitude;
         }
 
-        /**
-         * Resets the visual joystick and movement controls.
-         */
         function resetJoystick() {
             joystick.active = false;
             joystick.touchId = null;
@@ -566,21 +691,14 @@
             controls.forward = controls.backward = controls.left = controls.right = 0;
         }
 
-        /**
-         * Applies rotation changes to the cameraLook state.
-         */
         function applyLookDelta(deltaX, deltaY, speed) {
             cameraLook.yaw -= deltaX * speed;
-            cameraLook.pitch -= deltaY * speed;
+            // Standard vertical look (Up swipe = Up view)
+            cameraLook.pitch -= deltaY * speed; 
             
-            // Clamp pitch (vertical look) to prevent camera flipping
             cameraLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraLook.pitch));
         }
 
-
-        /**
-         * Sets up all keyboard and mobile/touch input listeners.
-         */
         function setupInputListeners(container) {
             const canvasElement = renderer.domElement;
             const containerWidth = container.clientWidth;
@@ -593,7 +711,6 @@
                 if (key === 'a' || key === 'arrowleft') controls.left = 1;
                 if (key === 'd' || key === 'arrowright') controls.right = 1;
                 if (key === ' ') controls.up = true; 
-                if (key === 'shift') controls.down = true; 
                 if (key === 'v') toggleView(); 
             });
 
@@ -603,8 +720,6 @@
                 if (key === 's' || key === 'arrowdown') controls.backward = 0;
                 if (key === 'a' || key === 'arrowleft') controls.left = 0;
                 if (key === 'd' || key === 'arrowright') controls.right = 0;
-                if (key === ' ') controls.up = false;
-                if (key === 'shift') controls.down = false;
             });
 
             // --- Mouse/Look & Action Controls (Desktop) ---
@@ -645,14 +760,12 @@
                     const touch = e.changedTouches[i];
                     
                     if (!joystick.active && isInsideJoystickArea(touch.clientX, touch.clientY)) {
-                        // 1. Joystick Activation (Left Side)
                         joystick.active = true;
                         joystick.touchId = touch.identifier;
                         joystick.handle.style.opacity = '1';
                         updateJoystick(touch.clientX, touch.clientY);
                     } 
                     else if (
-                        // 2. Look Pad Activation (Right Half)
                         touch.clientX >= containerWidth / 2 && 
                         !touch.target.closest('#action-buttons') && 
                         !activeLookTouch &&
@@ -673,17 +786,14 @@
                 for (let i = 0; i < e.changedTouches.length; i++) {
                     const touch = e.changedTouches[i];
                     
-                    // 1. Joystick Movement 
                     if (joystick.active && touch.identifier === joystick.touchId) {
                         updateJoystick(touch.clientX, touch.clientY);
                     } 
                     
-                    // 2. Camera Look (Right Half)
                     if (activeLookTouch && touch.identifier === activeLookTouch.identifier) {
                         const deltaX = touch.clientX - activeLookTouch.prevX;
                         const deltaY = touch.clientY - activeLookTouch.prevY;
                         
-                        // Use a 5x multiplier for touch responsiveness
                         applyLookDelta(deltaX, deltaY, lookSpeed * 5); 
                         
                         activeLookTouch.prevX = touch.clientX; 
@@ -726,17 +836,11 @@
                 controls.up = false; 
             }, { passive: false });
 
-            // --- View Toggle Button Listener ---
             document.getElementById('view-toggle-btn').addEventListener('click', toggleView);
 
-
-            // --- Block Selection (Simple cycling through available types) ---
             document.getElementById('active-block').addEventListener('click', cycleActiveBlock);
         }
 
-        /**
-         * Cycles the active block type for placing. 
-         */
         function cycleActiveBlock() {
             const typesArray = Object.values(blockTypes);
             let currentIndex = typesArray.findIndex(type => type.name === activeBlockType.name);
@@ -745,9 +849,6 @@
             updateActiveBlockDisplay();
         }
 
-        /**
-         * Updates the HUD to show the currently selected block. 
-         */
         function updateActiveBlockDisplay() {
             const display = document.getElementById('active-block');
             display.textContent = `Active: ${activeBlockType.name}`;
