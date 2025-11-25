@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Minecraft-like — Full build (~1000 lines), joystick movement, instanced chunks, closable settings, smaller tracker</title>
+  <title>Minecraft-like — Full build (~1000 lines), alternative joystick movement, instanced chunks, closable settings, smaller tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
   <style>
     /* ===============================================================================================
@@ -74,34 +74,69 @@
     #crosshair::after  { width: 20px; height: 2px; left: 0; top: 9px; }
 
     /* ===============================================================================================
-       Touch joystick (left-bottom)
+       Alternative movement joystick (ring + wedge directions)
+       - Big outer ring with a smaller puck
+       - Optional 8-way wedge snapping
+       - Built with pure DOM, no canvas
     =============================================================================================== */
-    #joystick {
+    #moveJoystick {
       position: absolute;
       bottom: 24px;
       left: 24px;
-      width: 150px;
-      height: 150px;
-      background: rgba(200,200,200,0.18);
-      border: 2px solid rgba(255,255,255,0.25);
+      width: 180px;
+      height: 180px;
       border-radius: 50%;
-      touch-action: none;
       z-index: 10;
+      touch-action: none;
+      background:
+        radial-gradient(closest-side, rgba(255,255,255,0.06), rgba(255,255,255,0.03) 40%, transparent 41%),
+        conic-gradient(from 0deg, rgba(255,255,255,0.06) 0 45deg, rgba(255,255,255,0.10) 45deg 90deg, rgba(255,255,255,0.06) 90deg 135deg, rgba(255,255,255,0.10) 135deg 180deg, rgba(255,255,255,0.06) 180deg 225deg, rgba(255,255,255,0.10) 225deg 270deg, rgba(255,255,255,0.06) 270deg 315deg, rgba(255,255,255,0.10) 315deg 360deg);
+      border: 2px solid rgba(255,255,255,0.25);
+      box-shadow: inset 0 0 18px rgba(0,0,0,0.5);
     }
-    #stick {
+    #movePuck {
       position: absolute;
-      width: 68px;
-      height: 68px;
-      background: rgba(100,100,100,0.65);
-      border: 2px solid rgba(255,255,255,0.3);
+      width: 64px; height: 64px;
+      left: 58px; top: 58px; /* centered initially (180-64)/2 = 58 */
       border-radius: 50%;
-      left: 41px; top: 41px;
+      background: linear-gradient(180deg, rgba(180,200,255,0.65), rgba(90,120,200,0.65));
+      border: 2px solid rgba(255,255,255,0.35);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      touch-action: none;
+    }
+
+    /* ===============================================================================================
+       Right-side camera joystick (smaller, optional)
+    =============================================================================================== */
+    #lookJoystick {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      z-index: 10;
+      touch-action: none;
+      background:
+        radial-gradient(closest-side, rgba(255,255,255,0.06), rgba(255,255,255,0.03) 40%, transparent 41%),
+        conic-gradient(from 0deg, rgba(255,255,255,0.08) 0 180deg, rgba(255,255,255,0.05) 180deg 360deg);
+      border: 2px solid rgba(255,255,255,0.25);
+      box-shadow: inset 0 0 16px rgba(0,0,0,0.5);
+    }
+    #lookPuck {
+      position: absolute;
+      width: 52px; height: 52px;
+      left: 44px; top: 44px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, rgba(255,180,180,0.65), rgba(200,90,90,0.65));
+      border: 2px solid rgba(255,255,255,0.35);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       touch-action: none;
     }
 
     /* ===============================================================================================
        Closable settings panel
-       - Per request: add button to close panel
+       - Per request: button to close panel
        - No top-right stats HUD
     =============================================================================================== */
     #panel {
@@ -199,7 +234,15 @@
 
   <button id="jumpBtn" class="btn">Jump</button>
 
-  <div id="joystick"><div id="stick"></div></div>
+  <!-- Alternative movement joystick -->
+  <div id="moveJoystick">
+    <div id="movePuck"></div>
+  </div>
+
+  <!-- Right-side look joystick (optional; camera control) -->
+  <div id="lookJoystick">
+    <div id="lookPuck"></div>
+  </div>
 
   <div id="panel">
     <h3>Settings</h3>
@@ -243,6 +286,11 @@
       <input type="checkbox" id="minimapToggle" checked />
     </div>
 
+    <div class="row">
+      <span class="small">8-way snap movement</span>
+      <input type="checkbox" id="snap8Toggle" />
+    </div>
+
     <div id="panelButtons">
       <button id="closePanelBtn" class="btn">Close settings</button>
       <button id="openPanelBtn" class="btn" style="display:none">Open settings</button>
@@ -251,7 +299,7 @@
 
   <div id="minimap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
 
-  <div class="tip">Double-click the game to enable mouse look. Use the left joystick to move. Drag anywhere else to rotate.</div>
+  <div class="tip">Double-click the game for mouse look. Left ring joystick moves. Right ring joystick looks.</div>
 
   <!-- =============================================================================================
        Scripts
@@ -302,6 +350,17 @@
     }
 
     function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function length2(x, y){ return Math.sqrt(x*x + y*y); }
+    function normalize2(x, y){
+      const L = Math.sqrt(x*x + y*y) || 1;
+      return { x: x / L, y: y / L };
+    }
+    function snap8(x, y){
+      const ang = Math.atan2(y, x); // -pi..pi
+      const sector = Math.round(ang / (Math.PI / 4)); // 8 sectors
+      const snappedAng = sector * (Math.PI / 4);
+      return { x: Math.cos(snappedAng), y: Math.sin(snappedAng) };
+    }
 
     /* =============================================================================================
        Scene, camera, renderer
@@ -585,54 +644,130 @@
     }
 
     /* =============================================================================================
-       Joystick input and rotation-aligned movement
-       - Up (finger moves up) -> forward relative to yaw
-       - Down -> backward
-       - Left/Right -> strafe relative to yaw
+       Alternative joysticks: movement ring and look ring
     ============================================================================================= */
-    const joystick = document.getElementById("joystick");
-    const stick = document.getElementById("stick");
-    let joyInput = { x: 0, y: 0 };
-    const JOY_RADIUS = 56;
-    let joyCenter = null;
+    const moveJoystick = document.getElementById("moveJoystick");
+    const movePuck = document.getElementById("movePuck");
+    const lookJoystick = document.getElementById("lookJoystick");
+    const lookPuck = document.getElementById("lookPuck");
 
-    function recalcJoyCenter() {
-      const rect = joystick.getBoundingClientRect();
-      joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+    // Movement input vector (aligned to player yaw inside main loop)
+    let moveInput = { x: 0, y: 0 };
+    let lookInput = { x: 0, y: 0 }; // camera yaw/pitch deltas
+
+    // Joystick radii and center caches
+    let moveCenter = { x: 0, y: 0 }, lookCenter = { x: 0, y: 0 };
+    const moveRadiusPx = 76; // effective travel for puck inside 180px ring ((180-64)/2 = 58). Allow slight overflow, clamp later
+    const lookRadiusPx = 58; // inside 140px ring ((140-52)/2 = 44). Allow bit larger, clamp
+
+    function recalcCenters(){
+      const mRect = moveJoystick.getBoundingClientRect();
+      moveCenter.x = mRect.left + mRect.width/2;
+      moveCenter.y = mRect.top + mRect.height/2;
+      const lRect = lookJoystick.getBoundingClientRect();
+      lookCenter.x = lRect.left + lRect.width/2;
+      lookCenter.y = lRect.top + lRect.height/2;
     }
-    recalcJoyCenter();
-    window.addEventListener('resize', recalcJoyCenter);
+    recalcCenters();
+    window.addEventListener('resize', recalcCenters);
 
-    function updateJoystick(e) {
+    function setPuck(el, cx, cy, dx, dy, maxR){
+      const len = Math.min(length2(dx, dy), maxR);
+      const ang = Math.atan2(dy, dx);
+      const px = cx + Math.cos(ang) * len;
+      const py = cy + Math.sin(ang) * len;
+
+      // Position el relative to joystick container
+      const rect = el.parentElement.getBoundingClientRect();
+      el.style.left = (px - rect.left - el.offsetWidth/2) + "px";
+      el.style.top  = (py - rect.top  - el.offsetHeight/2) + "px";
+    }
+
+    const snap8Toggle = document.getElementById("snap8Toggle");
+
+    // Movement joystick handlers
+    function onMoveStart(e){
       const t = e.touches[0];
-      const dx = t.clientX - joyCenter.x;
-      const dy = t.clientY - joyCenter.y;
+      const dx = t.clientX - moveCenter.x;
+      const dy = t.clientY - moveCenter.y;
+      const nx = clamp(dx / moveRadiusPx, -1, 1);
+      const ny = clamp(dy / moveRadiusPx, -1, 1);
 
-      // Normalize to [-1, 1] and clamp
-      const nx = clamp(dx / JOY_RADIUS, -1, 1);
-      const ny = clamp(dy / JOY_RADIUS, -1, 1);
-
-      // Movement mapping: screen up (ny<0) -> forward (+y)
-      joyInput.x = nx;     // strafe left/right
-      joyInput.y = -ny;    // forward/back
-
-      // Visual stick follows finger
-      stick.style.left = (41 + nx * JOY_RADIUS) + "px";
-      stick.style.top  = (41 + ny * JOY_RADIUS) + "px";
+      if (snap8Toggle.checked){
+        const s = snap8(nx, ny);
+        moveInput.x = s.x;
+        moveInput.y = -s.y; // screen up -> forward
+        setPuck(movePuck, moveCenter.x, moveCenter.y, s.x * moveRadiusPx, s.y * moveRadiusPx, moveRadiusPx);
+      } else {
+        moveInput.x = nx;
+        moveInput.y = -ny; // invert Y so up = forward
+        setPuck(movePuck, moveCenter.x, moveCenter.y, dx, dy, moveRadiusPx);
+      }
     }
-    joystick.addEventListener("touchstart", updateJoystick, { passive: true });
-    joystick.addEventListener("touchmove",  updateJoystick, { passive: true });
-    joystick.addEventListener("touchend", () => {
-      joyInput.x = 0; joyInput.y = 0;
-      stick.style.left = "41px"; stick.style.top = "41px";
-    });
+    function onMoveMove(e){
+      const t = e.touches[0];
+      const dx = t.clientX - moveCenter.x;
+      const dy = t.clientY - moveCenter.y;
+      const nx = clamp(dx / moveRadiusPx, -1, 1);
+      const ny = clamp(dy / moveRadiusPx, -1, 1);
+
+      if (snap8Toggle.checked){
+        const s = snap8(nx, ny);
+        moveInput.x = s.x;
+        moveInput.y = -s.y;
+        setPuck(movePuck, moveCenter.x, moveCenter.y, s.x * moveRadiusPx, s.y * moveRadiusPx, moveRadiusPx);
+      } else {
+        moveInput.x = nx;
+        moveInput.y = -ny;
+        setPuck(movePuck, moveCenter.x, moveCenter.y, dx, dy, moveRadiusPx);
+      }
+    }
+    function onMoveEnd(){
+      moveInput.x = 0; moveInput.y = 0;
+      // Reset puck to center
+      movePuck.style.left = "58px";
+      movePuck.style.top  = "58px";
+    }
+    moveJoystick.addEventListener("touchstart", onMoveStart, { passive: true });
+    moveJoystick.addEventListener("touchmove",  onMoveMove,  { passive: true });
+    moveJoystick.addEventListener("touchend",   onMoveEnd,   { passive: true });
+
+    // Look joystick handlers (affects yaw/pitch smoothly)
+    function onLookStart(e){
+      const t = e.touches[0];
+      const dx = t.clientX - lookCenter.x;
+      const dy = t.clientY - lookCenter.y;
+      const nx = clamp(dx / lookRadiusPx, -1, 1);
+      const ny = clamp(dy / lookRadiusPx, -1, 1);
+      lookInput.x = nx;
+      lookInput.y = ny;
+      setPuck(lookPuck, lookCenter.x, lookCenter.y, dx, dy, lookRadiusPx);
+    }
+    function onLookMove(e){
+      const t = e.touches[0];
+      const dx = t.clientX - lookCenter.x;
+      const dy = t.clientY - lookCenter.y;
+      const nx = clamp(dx / lookRadiusPx, -1, 1);
+      const ny = clamp(dy / lookRadiusPx, -1, 1);
+      lookInput.x = nx;
+      lookInput.y = ny;
+      setPuck(lookPuck, lookCenter.x, lookCenter.y, dx, dy, lookRadiusPx);
+    }
+    function onLookEnd(){
+      lookInput.x = 0; lookInput.y = 0;
+      lookPuck.style.left = "44px";
+      lookPuck.style.top  = "44px";
+    }
+    lookJoystick.addEventListener("touchstart", onLookStart, { passive: true });
+    lookJoystick.addEventListener("touchmove",  onLookMove,  { passive: true });
+    lookJoystick.addEventListener("touchend",   onLookEnd,   { passive: true });
 
     /* =============================================================================================
-       Touch drag rotation (exclude joystick touches)
+       Touch drag rotation on empty areas (exclude both joysticks)
     ============================================================================================= */
     let dragging = false, lastX = 0, lastY = 0;
     document.addEventListener("touchstart", e => {
-      if (e.target.closest("#joystick")) return;
+      if (e.target.closest("#moveJoystick") || e.target.closest("#lookJoystick")) return;
       dragging = true;
       lastX = e.touches[0].clientX;
       lastY = e.touches[0].clientY;
@@ -732,6 +867,13 @@
     let CAM_LERP = 0.18;
 
     function updateCamera() {
+      // Apply look joystick deltas to yaw/pitch for smooth camera
+      const lookYawSpeed = 1.6;   // radians per second at full deflection
+      const lookPitchSpeed = 1.2; // radians per second at full deflection
+      yaw   += lookInput.x * lookYawSpeed * dtGlobal;
+      pitch -= lookInput.y * lookPitchSpeed * dtGlobal;
+      pitch = clamp(pitch, -Math.PI/3, Math.PI/3);
+
       const target = player.position.clone();
       if (pov === "first") {
         const eye = target.clone().add(new THREE.Vector3(0, capsuleHeight * 0.35, 0));
@@ -951,55 +1093,57 @@
     }
     bindPointerLockMouseMove();
 
-    // Map WASD to joystick vector to maintain single movement pipeline
-    function desktopControlsToJoystick() {
+    // Map WASD to movement ring to keep a single pipeline
+    function desktopControlsToMoveRing() {
       let x = 0, y = 0; // x=strife, y=forward/back
       if (keys.has("KeyA")) x -= 1;
       if (keys.has("KeyD")) x += 1;
       if (keys.has("KeyW")) y += 1;
       if (keys.has("KeyS")) y -= 1;
       const len = Math.hypot(x, y); if (len > 0) { x /= len; y /= len; }
-      joyInput.x = x; joyInput.y = y;
-      // Visual stick mirrors keyboard input
-      stick.style.left = (41 + x * JOY_RADIUS) + "px";
-      stick.style.top  = (41 - y * JOY_RADIUS) + "px"; // invert visual Y to match screen
-      requestAnimationFrame(desktopControlsToJoystick);
+      moveInput.x = x; moveInput.y = y;
+      // Visual puck mirrors keyboard input
+      const dx = x * moveRadiusPx;
+      const dy = -y * moveRadiusPx; // invert visual Y to match screen orientation
+      setPuck(movePuck, moveCenter.x, moveCenter.y, dx, dy, moveRadiusPx);
+      requestAnimationFrame(desktopControlsToMoveRing);
     }
-    desktopControlsToJoystick();
+    desktopControlsToMoveRing();
 
     /* =============================================================================================
        Main loop: physics, chunk updates, movement, camera, render
     ============================================================================================= */
     let lastTime = performance.now();
+    let dtGlobal = 0;
 
     function animate() {
       requestAnimationFrame(animate);
       const now = performance.now();
-      const dt = Math.min((now - lastTime) / 1000, 0.033);
+      dtGlobal = Math.min((now - lastTime) / 1000, 0.033);
       lastTime = now;
 
       // Keep nearby chunks loaded (throttled)
       updateVisibleChunks(player.position.x, player.position.z, now);
 
       // Gravity and vertical motion
-      playerVel.y -= GRAVITY * dt;
-      groundSnapAndDetect(dt);
+      playerVel.y -= GRAVITY * dtGlobal;
+      groundSnapAndDetect(dtGlobal);
 
       // Movement relative to rotation (forward/back/strafe aligned with yaw)
       const { forward, right } = getFacingVectors();
       const moveDir = new THREE.Vector3()
-        .addScaledVector(forward, joyInput.y)
-        .addScaledVector(right,   joyInput.x);
+        .addScaledVector(forward, moveInput.y)
+        .addScaledVector(right,   moveInput.x);
       if (moveDir.lengthSq() > 0) moveDir.normalize();
 
       const vx = moveDir.x * MOVE_SPEED;
       const vz = moveDir.z * MOVE_SPEED;
 
       // Horizontal separation: resolve X then Z axis to avoid jitter
-      player.position.x += vx * dt;
+      player.position.x += vx * dtGlobal;
       horizontalResolve('x');
 
-      player.position.z += vz * dt;
+      player.position.z += vz * dtGlobal;
       horizontalResolve('z');
 
       // Floor safety and bounds
@@ -1011,7 +1155,7 @@
         onGround = true;
       }
 
-      // Camera and UI
+      // Camera, minimap, render
       updateCamera();
       drawMinimap();
       renderer.render(scene, camera);
@@ -1025,7 +1169,7 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      recalcJoyCenter();
+      recalcCenters();
     });
 
     /* =============================================================================================
