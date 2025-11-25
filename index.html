@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voxel Builder Game - Glass Block Fix (V3)</title>
+    <title>Voxel Builder Game - Vertex Colors (V13)</title>
     <!-- Load Tailwind CSS for easy UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Load Three.js for 3D rendering (r128) -->
@@ -106,6 +106,11 @@
                 -
             </button>
         </div>
+        
+        <!-- Loading Spinner is no longer needed but kept for potential future use -->
+        <div id="loading" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 z-50">
+            <p class="absolute text-white">Initializing World...</p>
+        </div>
 
     </div>
 
@@ -113,31 +118,76 @@
         // --- Core Global Variables ---
         let scene, camera, renderer;
         let playerModel; 
-        let opaqueMesh; // Mesh for all non-transparent blocks (merged for efficiency)
-        let transparentGroup; // Group for individual transparent blocks (for proper rendering order)
-        let cameraY; // Smoothed camera vertical position
+        let opaqueMesh; 
+        let transparentGroup; 
+        let cameraY; 
         
-        // Block data storage: key -> blockType (used for collision and world generation)
+        // --- Materials (defined immediately, no texture loading needed) ---
+
+        // Opaque Material uses vertexColors: true to read color data from geometry
+        const OPAQUE_MATERIAL = new THREE.MeshStandardMaterial({
+            vertexColors: true, 
+            metalness: 0.1,
+            roughness: 0.8,
+        });
+
+        // Dedicated Glass Material (transparent and non-textured)
+        const GLASS_MATERIAL = new THREE.MeshStandardMaterial({
+            color: 0x99FFFF, // Cyan-like color for glass
+            transparent: true,
+            opacity: 0.4,
+            metalness: 0.1,
+            roughness: 0.1,
+        });
+        
+        // Block Definitions (using hex colors)
+        const DIRT_COLOR = 0x6E3D27; // Updated deep brown color
+        
+        const blockTypes = {
+            GRASS: { 
+                name: 'Grass', 
+                key: 'GRASS', 
+                opaque: true, 
+                // Bi-color definition for grass block
+                colors: { 
+                    TOP: 0x07A921,    // Vibrant forest green
+                    SIDE: DIRT_COLOR, // Updated dirt color for sides
+                    BOTTOM: DIRT_COLOR  // Updated dirt color for bottom
+                } 
+            },
+            DIRT: { name: 'Dirt', key: 'DIRT', opaque: true, color: DIRT_COLOR },   // Uniform Deep Brown
+            STONE: { name: 'Stone', key: 'STONE', opaque: true, color: 0x9E9E9E }, // Uniform Gray
+            WOOD: { name: 'Wood', key: 'WOOD', opaque: true, color: 0x5D4037 },   // Uniform Dark Brown
+            GLASS: { 
+                name: 'Glass', 
+                key: 'GLASS', 
+                opaque: false, 
+                color: 0x99FFFF // Cyan (used for HUD and transparent material)
+            }
+        };
+        let activeBlockType = blockTypes.GLASS;
+        
+        // Block data storage: key -> blockType
         const worldBlockData = new Map(); 
         
         // --- Physics & Player Constants ---
         const GRAVITY = 0.0185;         
         const TERMINAL_VELOCITY = 0.5;  
         const JUMP_VELOCITY = 0.25;     
-        const EPSILON = 0.0001; // Small offset to guarantee player is always above block surfaces
+        const EPSILON = 0.0001; 
         
         // --- Movement Constants for Acceleration ---
         const MAX_WALK_SPEED = 0.115;    
         const ACCELERATION = 0.008;      
         const FRICTION = 0.4;            
         
-        // Player's velocity vector (how much the player moves each frame)
+        // Player's velocity vector
         let velocity = new THREE.Vector3(0, 0, 0); 
         
         // Player Collision Box (AABB)
         const playerHeight = 1.8;
-        const playerRadius = 0.3; // Half width/depth of the AABB
-        const playerYOffset = -1.7; // Head position (player.position.y) to feet (Collision offset)
+        const playerRadius = 0.3; 
+        const playerYOffset = -1.7; 
         
         // Player state and constants
         const player = {
@@ -151,42 +201,17 @@
         const WORLD_SIZE = 64; 
         const MAX_HEIGHT = 16;
         
-        // Block Definitions (Materials and properties)
-        const blockTypes = {
-            GRASS: { name: 'Grass', color: 0x4CAF50, opaque: true },
-            DIRT: { name: 'Dirt', color: 0x795548, opaque: true },
-            STONE: { name: 'Stone', color: 0x78909C, opaque: true },
-            WOOD: { name: 'Wood', color: 0x8D6E63, opaque: true },
-            GLASS: { name: 'Glass', color: 0x99FFFF, opaque: false } // Transparent Glass block
-        };
-        let activeBlockType = blockTypes.GLASS;
-        
-        // Dedicated Glass Material
-        const GLASS_MATERIAL = new THREE.MeshStandardMaterial({
-            color: 0x99FFFF, 
-            transparent: true,
-            opacity: 0.4,
-            metalness: 0.1,
-            roughness: 0.1,
-        });
-
-        // Standard Opaque Block Material
-        const OPAQUE_MATERIAL = new THREE.MeshPhongMaterial({ 
-            vertexColors: true, 
-            shininess: 0 
-        });
-
         // Standard block geometry (1 unit cube)
         const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
         
-        // Faces used for generating the merged mesh
+        // Faces used for generating the merged mesh, including face index
         const CUBE_FACES = [
-            { dir: [1, 0, 0], face: 0, normal: [1, 0, 0] },  
-            { dir: [-1, 0, 0], face: 1, normal: [-1, 0, 0] }, 
-            { dir: [0, 1, 0], face: 2, normal: [0, 1, 0] },  
-            { dir: [0, -1, 0], face: 3, normal: [0, -1, 0] }, 
-            { dir: [0, 0, 1], face: 4, normal: [0, 0, 1] },  
-            { dir: [0, 0, -1], face: 5, normal: [0, 0, -1] } 
+            { dir: [1, 0, 0], face: 0, normal: [1, 0, 0], side: 'SIDE' },  // Right
+            { dir: [-1, 0, 0], face: 1, normal: [-1, 0, 0], side: 'SIDE' }, // Left
+            { dir: [0, 1, 0], face: 2, normal: [0, 1, 0], side: 'TOP' },  // Top 
+            { dir: [0, -1, 0], face: 3, normal: [0, -1, 0], side: 'BOTTOM' }, // Bottom
+            { dir: [0, 0, 1], face: 4, normal: [0, 0, 1], side: 'SIDE' },  // Front
+            { dir: [0, 0, -1], face: 5, normal: [0, 0, -1], side: 'SIDE' } // Back
         ];
         
         // --- Control Variables ---
@@ -222,25 +247,19 @@
         function createCapsuleGeometry(radius, height, radialSegments) {
             const material = new THREE.MeshStandardMaterial({ color: 0x33AFFF });
             
-            // Height of the flat cylindrical portion (Total Height - Radius of the top cap)
             const cylinderHeightFlat = height - radius; 
 
-            // 1. Flat Cylinder (Base at Y=0, Top at Y=cylinderHeightFlat)
             const cylinder = new THREE.CylinderGeometry(radius, radius, cylinderHeightFlat, radialSegments, 1);
             const cylinderMesh = new THREE.Mesh(cylinder, material);
-            // Positioned so its base is at Y=0. Center is at cylinderHeightFlat / 2.
             cylinderMesh.position.y = cylinderHeightFlat / 2; 
 
-            // 2. Top Hemisphere 
             const topSphere = new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2);
             const topMesh = new THREE.Mesh(topSphere, material);
-            // Positioned so its bottom rests on the top of the cylinder. Center is at Y=cylinderHeightFlat.
             topMesh.position.y = cylinderHeightFlat; 
             
             const group = new THREE.Group();
             group.add(cylinderMesh, topMesh);
             
-            // The group now has its base at Y=0 and its top at Y=height (1.8).
             return group; 
         }
 
@@ -251,10 +270,6 @@
             playerModel = new THREE.Group();
             const capsuleVisual = createCapsuleGeometry(playerRadius, playerHeight, 16);
             
-            // Shift the visual model down by its total height (playerHeight = 1.8) 
-            // so the visual model's TOP (Y=1.8 in local space) aligns with the player's position (head/camera at Y=0 in local space).
-            capsuleVisual.position.y = -playerHeight; 
-
             playerModel.add(capsuleVisual);
             
             playerModel.position.copy(player.position);
@@ -297,23 +312,26 @@
                 }
             }
         }
-
+        
         /**
          * Generates the opaque mesh (merged) and the transparent blocks (individual meshes).
+         * Now uses vertex color attributes instead of UV coordinates.
          */
         function generateMeshes() {
             const positions = [];
-            const colors = [];
             const normals = [];
+            const colors = []; // Array for RGB values (vertex colors)
             const transparentBlocks = new THREE.Group();
 
             const tempBoxGeometry = blockGeometry.clone();
+
+            // BoxGeometry index buffer is organized into 6 faces, 6 vertices each (2 triangles)
+            const indexAttribute = tempBoxGeometry.index;
 
             worldBlockData.forEach((type, key) => {
                 const [x, y, z] = key.split(',').map(Number);
                 
                 if (type.opaque) {
-                    const blockColor = new THREE.Color(type.color);
                     
                     // Add to Opaque Mesh (with Culling)
                     CUBE_FACES.forEach(face => {
@@ -323,30 +341,41 @@
 
                         const neighborType = getBlockTypeAt(nx, ny, nz);
 
-                        // We only cull the face if the neighbor block is also OPAQUE.
-                        // If the neighbor is AIR (null) or TRANSPARENT (not opaque), we render the face.
+                        // Only render face if neighbor is air (null) or transparent (not opaque)
                         if (!neighborType || !neighborType.opaque) {
                             
+                            // 1. Determine the color for this face
+                            let faceColorHex;
+                            if (type.key === 'GRASS') {
+                                faceColorHex = type.colors[face.side];
+                            } else {
+                                faceColorHex = type.color;
+                            }
+                            const tempColor = new THREE.Color(faceColorHex);
+
                             tempBoxGeometry.translate(x + 0.5, y + 0.5, z + 0.5);
                             
                             const positionAttribute = tempBoxGeometry.attributes.position;
-                            const indexAttribute = tempBoxGeometry.index;
-                            
-                            const startIndex = face.face * 6; 
+                            const startIndex = face.face * 6; // index for the 6 vertices of this face (2 triangles)
                             
                             for (let i = 0; i < 6; i++) {
                                 const vertexIndex = indexAttribute.getX(startIndex + i);
                                 
+                                // 1. Positions
                                 positions.push(positionAttribute.getX(vertexIndex), positionAttribute.getY(vertexIndex), positionAttribute.getZ(vertexIndex));
+                                
+                                // 2. Normals
                                 normals.push(face.normal[0], face.normal[1], face.normal[2]);
-                                colors.push(blockColor.r, blockColor.g, blockColor.b);
+                                
+                                // 3. Colors (NEW!)
+                                colors.push(tempColor.r, tempColor.g, tempColor.b); 
                             }
 
                             tempBoxGeometry.translate(-(x + 0.5), -(y + 0.5), -(z + 0.5));
                         }
                     });
                 } else {
-                    // Add to Transparent Group (Individual Mesh, rendering all faces for simplicity)
+                    // Transparent Blocks (Individual Mesh)
                     const mesh = new THREE.Mesh(blockGeometry, GLASS_MATERIAL);
                     mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
                     mesh.castShadow = true;
@@ -356,11 +385,11 @@
                 }
             });
             
-            // Create the Opaque Mesh
+            // Create the Opaque Mesh Geometry
             const opaqueGeometry = new THREE.BufferGeometry();
             opaqueGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            opaqueGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
             opaqueGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); 
+            opaqueGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); // Add color attribute
 
             const mesh = new THREE.Mesh(opaqueGeometry, OPAQUE_MATERIAL);
             mesh.castShadow = true;
@@ -391,7 +420,7 @@
             scene.add(transparentGroup);
         }
         
-        // --- Collision and Movement Logic ---
+        // --- Collision and Movement Logic (No Change) ---
         
         function isColliding(newPos) {
             const minX = Math.floor(newPos.x - playerRadius);
@@ -416,8 +445,7 @@
         }
 
         /**
-         * Collision resolution, now using an EPSILON offset when snapping to ground
-         * to prevent sinking/jitter from floating-point errors.
+         * Collision resolution.
          */
         function checkAndApplyMovement() {
             // 1. Apply gravity
@@ -444,17 +472,16 @@
                     // Landing on floor: SNAP the position exactly to the top surface.
                     const minYBlock = Math.floor(player.position.y + playerYOffset);
                     
-                    // FIX: Use EPSILON to push the player slightly above the block top (minYBlock + 1)
+                    // Use EPSILON to push the player slightly above the block top (minYBlock + 1)
                     player.position.y = (minYBlock + 1) - playerYOffset + EPSILON; 
                     
                     player.onGround = true; 
                 } else { 
                     // Hitting ceiling (delta.y >= 0): SNAP the player's head exactly to the bottom 
-                    // edge of the block they hit (Math.floor(player.position.y)).
                     player.position.y = Math.floor(player.position.y); 
                 }
                 
-                // Set velocity to zero for all Y-collisions (no bounce)
+                // Set velocity to zero for all Y-collisions
                 velocity.y = 0;             
             }
             
@@ -466,7 +493,7 @@
             }
         }
         
-        // --- Block Manipulation ---
+        // --- Block Manipulation (No Change) ---
         
         // Helper to check for intersection between the new block's AABB and the player's AABB
         function checkPlayerBlockOverlap(blockX, blockY, blockZ) {
@@ -539,9 +566,8 @@
 
                 const newBlockKey = getKey(newX, newY, newZ);
                 
-                // FIXED: Use dedicated AABB intersection check to see if the new block overlaps with the player.
+                // Use dedicated AABB intersection check to see if the new block overlaps with the player.
                 if (checkPlayerBlockOverlap(newX, newY, newZ)) {
-                    // console.log("Collision with player detected, placement blocked.");
                     return; 
                 }
 
@@ -560,7 +586,11 @@
             const containerWidth = container.clientWidth || window.innerWidth;
             const containerHeight = container.clientHeight || window.innerHeight;
             const aspectRatio = containerWidth / containerHeight;
-
+            const loadingScreen = document.getElementById('loading');
+            
+            // No texture loading needed, proceed directly to initialization
+            loadingScreen.style.display = 'none';
+            
             // 1. Scene Setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); 
@@ -671,8 +701,7 @@
             // 4. Collision Detection and Movement Application
             checkAndApplyMovement();
             
-            // 5. Smooth Camera Y Position (Filters out minor collision jitter)
-            // LERPs (linearly interpolates) the cameraY towards the player.position.y
+            // 5. Smooth Camera Y Position 
             cameraY = THREE.MathUtils.lerp(cameraY, player.position.y, 0.3);
 
 
@@ -711,7 +740,7 @@
             renderer.render(scene, camera);
         }
 
-        // --- UI and Input Handlers ---
+        // --- UI and Input Handlers (No Change) ---
         
         function toggleView() {
             isThirdPerson = !isThirdPerson;
@@ -952,7 +981,15 @@
         function updateActiveBlockDisplay() {
             const display = document.getElementById('active-block');
             display.textContent = `Active: ${activeBlockType.name}`;
-            display.style.borderColor = `#${activeBlockType.color.toString(16).padStart(6, '0')}`;
+            
+            // Determine the color for the HUD display border
+            let displayColor;
+            if (activeBlockType.key === 'GRASS') displayColor = `#${new THREE.Color(activeBlockType.colors.TOP).getHexString()}`;
+            else if (activeBlockType.key === 'GLASS') displayColor = `#${new THREE.Color(activeBlockType.color).getHexString()}`;
+            else if (activeBlockType.color) displayColor = `#${new THREE.Color(activeBlockType.color).getHexString()}`;
+            else displayColor = 'white';
+
+            display.style.borderColor = displayColor;
         }
 
 
