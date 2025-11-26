@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voxel Builder Game - Minecraft Hotbar (V31 - Count Locked to Corner)</title>
+    <title>Voxel Builder Game - Vertex Colors (V13)</title>
     <!-- Load Tailwind CSS for easy UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Load Three.js for 3D rendering (r128) -->
@@ -63,70 +63,6 @@
             z-index: 60;
             opacity: 0; 
         }
-        
-        /* Minecraft Hotbar Styles */
-        #hotbar {
-            /* Mimics the dark, segmented Minecraft texture */
-            background-color: #1c1c1c; 
-            border: 3px solid #000000;
-            padding: 2px; 
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        }
-
-        .hotbar-slot {
-            /* Enforce fixed square size for all devices */
-            width: 4rem; /* 64px */
-            height: 4rem; /* 64px */
-            
-            /* Crucial: Set to relative so .slot-count can use absolute positioning relative to this slot */
-            @apply flex items-center justify-center 
-                   relative cursor-pointer 
-                   bg-gray-500 bg-opacity-30; 
-            
-            margin: 1px; 
-            border: 2px solid #000000; 
-            transition: all 0.1s; 
-            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
-        }
-        
-        /* Minecraft Active Slot Frame - Thicker and Bolder */
-        .hotbar-slot.active {
-            border: none; 
-            outline: 5px solid #ffffff; 
-            outline-offset: -3px; 
-            box-shadow: 0 0 18px rgba(255, 255, 255, 0.7); 
-        }
-        
-        .slot-item-display {
-            /* Item inside the slot - takes up 100% of the slot area. This is the colored block. */
-            @apply p-1 w-full h-full text-center font-bold flex flex-col justify-center items-center;
-            color: white; 
-            font-size: 1.8rem; 
-            text-shadow: 1px 1px 3px #000; 
-            line-height: 1;
-        }
-        
-        .slot-count {
-             /* ABSOLUTE POSITIONING to lock it to the corner of the .hotbar-slot */
-             position: absolute;
-             bottom: 4px; /* Precise offset from the bottom edge */
-             right: 4px; /* Precise offset from the right edge */
-             
-             /* Visual Styles */
-             font-size: 0.9rem; 
-             font-weight: 900; 
-             color: white !important; 
-             line-height: 1; 
-             text-align: right;
-             z-index: 10; /* Ensure count is on top of the colored block */
-             
-             /* Outline for maximum visibility against any block color */
-             text-shadow: 
-                -1px -1px 0 #000,  
-                 1px -1px 0 #000,
-                -1px 1px 0 #000,
-                 1px 1px 0 #000; 
-        }
     </style>
 </head>
 <body>
@@ -134,18 +70,21 @@
         <!-- 3D Canvas will be injected here -->
         <div id="crosshair"></div>
 
-        <!-- Health and View HUD (Top Center/Right) -->
-        <div class="absolute top-4 left-1/2 transform -translate-x-1/2 flex space-x-6 z-20">
-            <!-- Health Hearts Display -->
-            <div id="health-bar" class="p-2 bg-red-900 bg-opacity-70 rounded-xl shadow-lg flex space-x-1">
-                <!-- Hearts will be dynamically injected here -->
+        <!-- Inventory/HUD -->
+        <div id="hud" class="absolute top-4 left-1/2 transform -translate-x-1/2 p-2 bg-gray-900 bg-opacity-70 rounded-xl shadow-lg z-20 flex space-x-4">
+            <div id="active-block" class="p-2 border-2 border-green-400 rounded-lg text-white font-bold cursor-pointer hover:bg-gray-700 transition">
+                Active: Glass
+            </div>
+            <div id="action-tip" class="p-2 text-sm text-gray-300 hidden sm:block">
+                WASD/Arrows to Move | Click to Lock Mouse & Look | Right-Click to Place
             </div>
         </div>
-
-        <!-- View Toggle Button (Top Right) -->
+        
+        <!-- View Toggle Button -->
         <button id="view-toggle-btn" class="absolute top-4 right-4 action-btn bg-purple-500 hover:bg-purple-600 active:bg-purple-700 p-3 text-sm z-30 w-32 h-12">
             Toggle View (FP)
         </button>
+
 
         <!-- Fixed Joystick Base (Mobile) -->
         <div id="joystick-base"></div>
@@ -168,21 +107,7 @@
             </button>
         </div>
         
-        <!-- Hotbar (Bottom Center) -->
-        <div id="hotbar" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 rounded-lg z-30 flex">
-            <!-- Slots will be dynamically injected here -->
-        </div>
-
-        <!-- Message Box for Damage/Death -->
-        <div id="message-box" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
-            <div class="bg-red-700 p-8 rounded-xl shadow-2xl text-white text-center">
-                <h2 id="message-title" class="text-3xl font-bold mb-4"></h2>
-                <p id="message-content" class="text-xl mb-6"></p>
-                <button id="respawn-btn" class="action-btn bg-blue-500 hover:bg-blue-600 px-6 py-3 text-lg">Respawn</button>
-            </div>
-        </div>
-        
-        <!-- Loading is now just for show since no assets are loaded -->
+        <!-- Loading Spinner is no longer needed but kept for potential future use -->
         <div id="loading" class="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-90 z-50">
             <p class="absolute text-white">Initializing World...</p>
         </div>
@@ -197,32 +122,18 @@
         let transparentGroup; 
         let cameraY; 
         
-        // --- Game State: Health and Inventory ---
-        const MAX_HEALTH = 10; // 5 hearts
-        let isDead = false;
-        
-        let inventory = [
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 },
-            { type: null, count: 0 }
-        ];
-        let activeSlotIndex = 0;
-        let activeItem = inventory[0];
+        // --- Materials (defined immediately, no texture loading needed) ---
 
-        // --- Materials ---
+        // Opaque Material uses vertexColors: true to read color data from geometry
         const OPAQUE_MATERIAL = new THREE.MeshStandardMaterial({
             vertexColors: true, 
             metalness: 0.1,
             roughness: 0.8,
         });
+
+        // Dedicated Glass Material (transparent and non-textured)
         const GLASS_MATERIAL = new THREE.MeshStandardMaterial({
-            color: 0x99FFFF, 
+            color: 0x99FFFF, // Cyan-like color for glass
             transparent: true,
             opacity: 0.4,
             metalness: 0.1,
@@ -230,46 +141,33 @@
         });
         
         // Block Definitions (using hex colors)
-        const DIRT_COLOR = 0x6E3D27; 
+        const DIRT_COLOR = 0x6E3D27; // Updated deep brown color
         
         const blockTypes = {
             GRASS: { 
                 name: 'Grass', 
                 key: 'GRASS', 
                 opaque: true, 
-                colors: { TOP: 0x07A921, SIDE: DIRT_COLOR, BOTTOM: DIRT_COLOR },
-                iconColor: 0x07A921 
+                // Bi-color definition for grass block
+                colors: { 
+                    TOP: 0x07A921,    // Vibrant forest green
+                    SIDE: DIRT_COLOR, // Updated dirt color for sides
+                    BOTTOM: DIRT_COLOR  // Updated dirt color for bottom
+                } 
             },
-            DIRT: { 
-                name: 'Dirt', 
-                key: 'DIRT', 
-                opaque: true, 
-                color: DIRT_COLOR, 
-                iconColor: DIRT_COLOR 
-            },
-            STONE: { 
-                name: 'Stone', 
-                key: 'STONE', 
-                opaque: true, 
-                color: 0x9E9E9E, 
-                iconColor: 0x9E9E9E 
-            },
-            WOOD: { 
-                name: 'Wood', 
-                key: 'WOOD', 
-                opaque: true, 
-                color: 0x5D4037, 
-                iconColor: 0x5D4037 
-            },
+            DIRT: { name: 'Dirt', key: 'DIRT', opaque: true, color: DIRT_COLOR },   // Uniform Deep Brown
+            STONE: { name: 'Stone', key: 'STONE', opaque: true, color: 0x9E9E9E }, // Uniform Gray
+            WOOD: { name: 'Wood', key: 'WOOD', opaque: true, color: 0x5D4037 },   // Uniform Dark Brown
             GLASS: { 
                 name: 'Glass', 
                 key: 'GLASS', 
                 opaque: false, 
-                color: 0x99FFFF, 
-                iconColor: 0x99FFFF 
+                color: 0x99FFFF // Cyan (used for HUD and transparent material)
             }
         };
+        let activeBlockType = blockTypes.GLASS;
         
+        // Block data storage: key -> blockType
         const worldBlockData = new Map(); 
         
         // --- Physics & Player Constants ---
@@ -278,19 +176,16 @@
         const JUMP_VELOCITY = 0.25;     
         const EPSILON = 0.0001; 
         
-        // --- Movement Constants ---
+        // --- Movement Constants for Acceleration ---
         const MAX_WALK_SPEED = 0.115;    
         const ACCELERATION = 0.008;      
         const FRICTION = 0.4;            
-        const FALL_DAMAGE_VELOCITY_THRESHOLD = 0.35; 
-        const FALL_DAMAGE_MULTIPLIER = 10; 
         
         // Player's velocity vector
         let velocity = new THREE.Vector3(0, 0, 0); 
         
         // Player Collision Box (AABB)
-        const playerPhysicsHeight = 1.8; 
-        const playerVisualHeight = 1.4;  
+        const playerHeight = 1.8;
         const playerRadius = 0.3; 
         const playerYOffset = -1.7; 
         
@@ -299,24 +194,24 @@
             position: new THREE.Vector3(0, 10, 0), 
             rotationY: 0, 
             onGround: false,
-            health: MAX_HEALTH, 
-            lastFallVelocity: 0, 
         };
-        const lookSpeed = 0.002; 
+        const lookSpeed = 0.003; 
 
         // World Generation Constants
         const WORLD_SIZE = 64; 
         const MAX_HEIGHT = 16;
         
+        // Standard block geometry (1 unit cube)
         const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
         
+        // Faces used for generating the merged mesh, including face index
         const CUBE_FACES = [
-            { dir: [1, 0, 0], face: 0, normal: [1, 0, 0], side: 'SIDE' },
-            { dir: [-1, 0, 0], face: 1, normal: [-1, 0, 0], side: 'SIDE' },
-            { dir: [0, 1, 0], face: 2, normal: [0, 1, 0], side: 'TOP' },
-            { dir: [0, -1, 0], face: 3, normal: [0, -1, 0], side: 'BOTTOM' },
-            { dir: [0, 0, 1], face: 4, normal: [0, 0, 1], side: 'SIDE' },
-            { dir: [0, 0, -1], face: 5, normal: [0, 0, -1], side: 'SIDE' }
+            { dir: [1, 0, 0], face: 0, normal: [1, 0, 0], side: 'SIDE' },  // Right
+            { dir: [-1, 0, 0], face: 1, normal: [-1, 0, 0], side: 'SIDE' }, // Left
+            { dir: [0, 1, 0], face: 2, normal: [0, 1, 0], side: 'TOP' },  // Top 
+            { dir: [0, -1, 0], face: 3, normal: [0, -1, 0], side: 'BOTTOM' }, // Bottom
+            { dir: [0, 0, 1], face: 4, normal: [0, 0, 1], side: 'SIDE' },  // Front
+            { dir: [0, 0, -1], face: 5, normal: [0, 0, -1], side: 'SIDE' } // Back
         ];
         
         // --- Control Variables ---
@@ -335,6 +230,9 @@
             return `${x},${y},${z}`;
         }
         
+        /**
+         * Returns the block type object at the given integer coordinates, or null if empty.
+         */
         function getBlockTypeAt(x, y, z) {
              return worldBlockData.get(getKey(Math.floor(x), Math.floor(y), Math.floor(z)));
         }
@@ -370,7 +268,7 @@
          */
         function createPlayerModel() {
             playerModel = new THREE.Group();
-            const capsuleVisual = createCapsuleGeometry(playerRadius, playerVisualHeight, 16);
+            const capsuleVisual = createCapsuleGeometry(playerRadius, playerHeight, 16);
             
             playerModel.add(capsuleVisual);
             
@@ -379,7 +277,7 @@
             scene.add(playerModel);
         }
 
-        // --- World Generation and Optimization (Unchanged) ---
+        // --- World Generation and Optimization ---
         
         function getHeight(x, z) {
             const baseHeight = 4;
@@ -417,14 +315,17 @@
         
         /**
          * Generates the opaque mesh (merged) and the transparent blocks (individual meshes).
+         * Now uses vertex color attributes instead of UV coordinates.
          */
         function generateMeshes() {
             const positions = [];
             const normals = [];
-            const colors = []; 
+            const colors = []; // Array for RGB values (vertex colors)
             const transparentBlocks = new THREE.Group();
 
             const tempBoxGeometry = blockGeometry.clone();
+
+            // BoxGeometry index buffer is organized into 6 faces, 6 vertices each (2 triangles)
             const indexAttribute = tempBoxGeometry.index;
 
             worldBlockData.forEach((type, key) => {
@@ -440,8 +341,10 @@
 
                         const neighborType = getBlockTypeAt(nx, ny, nz);
 
+                        // Only render face if neighbor is air (null) or transparent (not opaque)
                         if (!neighborType || !neighborType.opaque) {
                             
+                            // 1. Determine the color for this face
                             let faceColorHex;
                             if (type.key === 'GRASS') {
                                 faceColorHex = type.colors[face.side];
@@ -453,13 +356,18 @@
                             tempBoxGeometry.translate(x + 0.5, y + 0.5, z + 0.5);
                             
                             const positionAttribute = tempBoxGeometry.attributes.position;
-                            const startIndex = face.face * 6; 
+                            const startIndex = face.face * 6; // index for the 6 vertices of this face (2 triangles)
                             
                             for (let i = 0; i < 6; i++) {
                                 const vertexIndex = indexAttribute.getX(startIndex + i);
                                 
+                                // 1. Positions
                                 positions.push(positionAttribute.getX(vertexIndex), positionAttribute.getY(vertexIndex), positionAttribute.getZ(vertexIndex));
+                                
+                                // 2. Normals
                                 normals.push(face.normal[0], face.normal[1], face.normal[2]);
+                                
+                                // 3. Colors (NEW!)
                                 colors.push(tempColor.r, tempColor.g, tempColor.b); 
                             }
 
@@ -477,10 +385,11 @@
                 }
             });
             
+            // Create the Opaque Mesh Geometry
             const opaqueGeometry = new THREE.BufferGeometry();
             opaqueGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             opaqueGeometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); 
-            opaqueGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); 
+            opaqueGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); // Add color attribute
 
             const mesh = new THREE.Mesh(opaqueGeometry, OPAQUE_MATERIAL);
             mesh.castShadow = true;
@@ -491,6 +400,7 @@
         }
 
         function refreshWorldMesh() {
+            // Remove old meshes/groups from scene
             if (opaqueMesh) {
                 scene.remove(opaqueMesh);
                 opaqueMesh.geometry.dispose();
@@ -499,8 +409,10 @@
                 scene.remove(transparentGroup);
             }
 
+            // Generate new meshes
             const meshes = generateMeshes();
 
+            // Assign and add to scene
             opaqueMesh = meshes.opaque;
             transparentGroup = meshes.transparent;
             
@@ -508,7 +420,7 @@
             scene.add(transparentGroup);
         }
         
-        // --- Collision, Movement, and Fall Damage Logic (Unchanged) ---
+        // --- Collision and Movement Logic (No Change) ---
         
         function isColliding(newPos) {
             const minX = Math.floor(newPos.x - playerRadius);
@@ -532,17 +444,17 @@
             return false;
         }
 
+        /**
+         * Collision resolution.
+         */
         function checkAndApplyMovement() {
-            if (isDead) { return; }
-
-            // 1. Apply gravity and update last fall velocity
+            // 1. Apply gravity
             if (!player.onGround) {
-                player.lastFallVelocity = velocity.y;
                 velocity.y = Math.max(-TERMINAL_VELOCITY, velocity.y - GRAVITY);
             }
             
             const delta = velocity.clone();
-            const wasOnGround = player.onGround;
+
             player.onGround = false;
 
             // 2. Move X axis
@@ -557,30 +469,19 @@
             if (isColliding(player.position)) {
                 
                 if (delta.y < 0) {
-                    // Landing on floor
+                    // Landing on floor: SNAP the position exactly to the top surface.
                     const minYBlock = Math.floor(player.position.y + playerYOffset);
-                    player.position.y = (minYBlock + 1) - playerYOffset + EPSILON; 
-                    player.onGround = true; 
                     
-                    // --- Fall Damage Check ---
-                    if (wasOnGround === false) {
-                        // We check the velocity just *before* impact (stored in lastFallVelocity)
-                        const impactSpeed = -player.lastFallVelocity; 
-                        
-                        if (impactSpeed > FALL_DAMAGE_VELOCITY_THRESHOLD) {
-                            // Calculate damage (e.g., 1 health damage per 0.1 velocity over threshold)
-                            const damage = Math.floor((impactSpeed - FALL_DAMAGE_VELOCITY_THRESHOLD) * FALL_DAMAGE_MULTIPLIER);
-                            if (damage > 0) {
-                                takeDamage(damage);
-                            }
-                        }
-                        player.lastFallVelocity = 0; // Reset
-                    }
+                    // Use EPSILON to push the player slightly above the block top (minYBlock + 1)
+                    player.position.y = (minYBlock + 1) - playerYOffset + EPSILON; 
+                    
+                    player.onGround = true; 
                 } else { 
-                    // Hitting ceiling
+                    // Hitting ceiling (delta.y >= 0): SNAP the player's head exactly to the bottom 
                     player.position.y = Math.floor(player.position.y); 
                 }
                 
+                // Set velocity to zero for all Y-collisions
                 velocity.y = 0;             
             }
             
@@ -592,170 +493,19 @@
             }
         }
         
-        // --- Health System Functions ---
+        // --- Block Manipulation (No Change) ---
         
-        function takeDamage(amount) {
-            if (isDead) return;
-            player.health = Math.max(0, player.health - amount);
-            updateHealthDisplay();
-            
-            if (player.health === 0) {
-                die();
-            }
-        }
-        
-        function die() {
-            isDead = true;
-            // Freeze movement
-            controls = { forward: 0, backward: 0, left: 0, right: 0, up: false, down: false };
-            velocity.set(0, 0, 0);
-            
-            const msgBox = document.getElementById('message-box');
-            document.getElementById('message-title').textContent = "You Died!";
-            document.getElementById('message-content').textContent = "You ran out of health. Time to respawn.";
-            msgBox.classList.remove('hidden');
-        }
-        
-        function respawn() {
-            isDead = false;
-            player.health = MAX_HEALTH;
-            updateHealthDisplay();
-            
-            // Move player to a safe start position (spawn point)
-            player.position.set(0, getHeight(0, 0) + playerPhysicsHeight + 5, 0); 
-            cameraY = player.position.y;
-            
-            document.getElementById('message-box').classList.add('hidden');
-        }
-        
-        function updateHealthDisplay() {
-            const healthBar = document.getElementById('health-bar');
-            healthBar.innerHTML = ''; // Clear existing hearts
-            
-            for (let i = 0; i < MAX_HEALTH / 2; i++) {
-                const heart = document.createElement('span');
-                heart.classList.add('text-3xl', 'select-none');
-                
-                let healthForHeart = player.health - (i * 2);
-                
-                if (healthForHeart >= 2) {
-                    // Full Heart (♥)
-                    heart.textContent = '♥';
-                    heart.style.color = '#ff6b6b'; 
-                } else if (healthForHeart === 1) {
-                    // Half Heart (using a star/dot as a placeholder, real games use sprites)
-                    heart.textContent = '●'; 
-                    heart.style.color = '#ffaa6b'; 
-                } else {
-                    // Empty Heart (♡)
-                    heart.textContent = '♡';
-                    heart.style.color = '#4a0000';
-                }
-                healthBar.appendChild(heart);
-            }
-        }
-
-        // --- Inventory and Hotbar Functions ---
-
-        function updateActiveItem() {
-            activeItem = inventory[activeSlotIndex];
-            updateHotbarDisplay();
-        }
-
-        function addItemToInventory(blockType) {
-            // 1. Try to stack in existing slots
-            for (let i = 0; i < inventory.length; i++) {
-                const slot = inventory[i];
-                if (slot.type === blockType && slot.count < 64) {
-                    slot.count++;
-                    updateHotbarDisplay();
-                    return true;
-                }
-            }
-
-            // 2. Find an empty slot
-            for (let i = 0; i < inventory.length; i++) {
-                const slot = inventory[i];
-                if (slot.type === null) {
-                    slot.type = blockType;
-                    slot.count = 1;
-                    updateHotbarDisplay();
-                    return true;
-                }
-            }
-            return false; // Inventory full
-        }
-
-        function useActiveItem() {
-            if (activeItem.type && activeItem.count > 0) {
-                activeItem.count--;
-                if (activeItem.count === 0) {
-                    activeItem.type = null;
-                }
-                updateHotbarDisplay();
-                return true;
-            }
-            return false;
-        }
-        
-        function updateHotbarDisplay() {
-            const hotbarEl = document.getElementById('hotbar');
-            hotbarEl.innerHTML = '';
-
-            inventory.forEach((item, index) => {
-                const slotEl = document.createElement('div');
-                slotEl.classList.add('hotbar-slot');
-                slotEl.dataset.slotIndex = index;
-
-                if (index === activeSlotIndex) {
-                    slotEl.classList.add('active');
-                }
-                
-                if (item.type) {
-                    // OCCUPIED SLOT: Display color and count
-                    
-                    // Item Display (Sets the color background)
-                    const itemDisplay = document.createElement('div');
-                    itemDisplay.classList.add('slot-item-display');
-                    // Use the item's iconColor for the slot background
-                    itemDisplay.style.backgroundColor = `#${new THREE.Color(item.type.iconColor || 0xffffff).getHexString()}`;
-                    
-                    // Count Display (Corner Text)
-                    const countDisplay = document.createElement('span');
-                    countDisplay.classList.add('slot-count');
-                    countDisplay.textContent = item.count;
-                    
-                    // The count element is appended directly to the slot, making its absolute
-                    // positioning relative to the whole slot, ensuring it sits in the corner.
-                    slotEl.appendChild(itemDisplay);
-                    slotEl.appendChild(countDisplay);
-
-                } else {
-                    // EMPTY SLOT: Display only the empty slot background (no number, no color)
-                    // The .hotbar-slot already provides the base background color
-                }
-
-                slotEl.addEventListener('click', () => switchActiveSlot(index));
-                hotbarEl.appendChild(slotEl);
-            });
-        }
-        
-        function switchActiveSlot(index) {
-            if (index < 0 || index >= inventory.length) return;
-            activeSlotIndex = index;
-            updateActiveItem();
-        }
-
-        // --- Block Manipulation (Unchanged) ---
-        
+        // Helper to check for intersection between the new block's AABB and the player's AABB
         function checkPlayerBlockOverlap(blockX, blockY, blockZ) {
+            // Player AABB (based on head position player.position.y)
             const playerMinX = player.position.x - playerRadius;
             const playerMaxX = player.position.x + playerRadius;
-            const playerMinY = player.position.y + playerYOffset; 
-            const playerMaxY = player.position.y;                   
+            const playerMinY = player.position.y + playerYOffset; // Feet
+            const playerMaxY = player.position.y;                   // Head/Camera
             const playerMinZ = player.position.z - playerRadius;
             const playerMaxZ = player.position.z + playerRadius;
 
+            // New Block AABB
             const blockMinX = blockX;
             const blockMaxX = blockX + 1;
             const blockMinY = blockY;
@@ -763,6 +513,7 @@
             const blockMinZ = blockZ;
             const blockMaxZ = blockZ + 1;
 
+            // Check for overlap along all three axes (AABB intersection rule)
             const overlapX = (blockMaxX > playerMinX) && (blockMinX < playerMaxX);
             const overlapY = (blockMaxY > playerMinY) && (blockMinY < playerMaxY);
             const overlapZ = (blockMaxZ > playerMinZ) && (blockMinZ < playerMaxZ);
@@ -770,49 +521,43 @@
             return overlapX && overlapY && overlapZ;
         }
 
+        // Raycast against both the opaque mesh and the transparent group
         function getTargetedBlock() {
             if (!opaqueMesh) return null;
 
             raycaster.setFromCamera({ x: 0, y: 0 }, camera); 
             
+            // Intersect with both the single merged mesh and the group of transparent blocks
             const intersects = raycaster.intersectObjects([opaqueMesh, ...transparentGroup.children]);
 
             if (intersects.length > 0) {
                 const intersect = intersects[0];
                 
+                // Calculate block coordinates
                 const x = Math.floor(intersect.point.x - intersect.face.normal.x * 0.01);
                 const y = Math.floor(intersect.point.y - intersect.face.normal.y * 0.01);
                 const z = Math.floor(intersect.point.z - intersect.face.normal.z * 0.01);
 
                 const normal = intersect.face.normal.clone();
 
-                return { x, y, z, normal, isBlock: true };
+                return { x, y, z, normal };
             }
             return null;
         }
         
         function mineBlock() {
-            if (isDead) return;
             const target = getTargetedBlock();
-            if (target && target.isBlock) {
+            if (target) {
                 const key = getKey(target.x, target.y, target.z);
                 
                 if (worldBlockData.has(key)) {
-                    const blockType = worldBlockData.get(key);
-                    
                     worldBlockData.delete(key);
                     refreshWorldMesh(); 
-                    
-                    addItemToInventory(blockType);
                 }
             }
         }
 
         function placeBlock() {
-            if (isDead) return;
-            // Check if the player has an active item and it's a block
-            if (!activeItem.type || activeItem.count === 0) return;
-            
             const target = getTargetedBlock();
             if (target) {
                 const newX = target.x + Math.round(target.normal.x);
@@ -821,14 +566,13 @@
 
                 const newBlockKey = getKey(newX, newY, newZ);
                 
+                // Use dedicated AABB intersection check to see if the new block overlaps with the player.
                 if (checkPlayerBlockOverlap(newX, newY, newZ)) {
                     return; 
                 }
 
                 if (!worldBlockData.has(newBlockKey)) {
-                    // Place block and consume item
-                    worldBlockData.set(newBlockKey, activeItem.type);
-                    useActiveItem();
+                    worldBlockData.set(newBlockKey, activeBlockType);
                     refreshWorldMesh(); 
                 }
             }
@@ -844,6 +588,7 @@
             const aspectRatio = containerWidth / containerHeight;
             const loadingScreen = document.getElementById('loading');
             
+            // No texture loading needed, proceed directly to initialization
             loadingScreen.style.display = 'none';
             
             // 1. Scene Setup
@@ -853,6 +598,8 @@
             // 2. Camera Setup
             camera = new THREE.PerspectiveCamera(75, aspectRatio, 0.1, 1000);
             camera.position.copy(player.position); 
+
+            // Initialize smoothed camera Y position
             cameraY = player.position.y; 
 
             // 3. Renderer Setup
@@ -860,6 +607,8 @@
             renderer.setSize(containerWidth, containerHeight);
             renderer.shadowMap.enabled = true;
             container.appendChild(renderer.domElement); 
+            
+            // IMPORTANT: Tell the renderer to sort transparent objects, essential for the glass fix.
             renderer.sortObjects = true;
 
             // 4. Lighting 
@@ -881,21 +630,14 @@
             // 6. Player Model
             createPlayerModel();
 
-            // 7. Initial Player Setup
-            player.position.y = getHeight(0, 0) + playerPhysicsHeight + 2; 
-            
-            // Give initial items (Survival Start)
-            inventory[0] = { type: blockTypes.GRASS, count: 10 };
-            inventory[1] = { type: blockTypes.DIRT, count: 10 };
-            inventory[2] = { type: blockTypes.STONE, count: 10 };
-            updateActiveItem();
-            updateHealthDisplay();
-            
-            // 8. Event Listeners
+            // 7. Event Listeners
             window.addEventListener('resize', () => { onWindowResize(); calculateJoystickPosition(); });
             setupInputListeners(container);
             calculateJoystickPosition(); 
-            document.getElementById('respawn-btn').addEventListener('click', respawn);
+            updateActiveBlockDisplay();
+
+            // 8. Find a safe starting position above the generated terrain
+            player.position.y = getHeight(0, 0) + playerHeight + 2; 
 
             // 9. Start the game loop
             animate();
@@ -903,11 +645,6 @@
 
         function animate() {
             requestAnimationFrame(animate);
-
-            if (isDead) {
-                renderer.render(scene, camera);
-                return;
-            }
 
             // 1. Calculate input force
             const horizontalInputActive = controls.forward > 0 || controls.backward > 0 || controls.left > 0 || controls.right > 0;
@@ -930,9 +667,11 @@
                 if (targetDirection.lengthSq() > 0) {
                     targetDirection.normalize();
                     
+                    // Apply acceleration (always pushes velocity toward target direction)
                     velocity.x += targetDirection.x * ACCELERATION;
                     velocity.z += targetDirection.z * ACCELERATION;
 
+                    // Cap speed at MAX_WALK_SPEED
                     const currentSpeedSq = velocity.x * velocity.x + velocity.z * velocity.z;
                     if (currentSpeedSq > MAX_WALK_SPEED * MAX_WALK_SPEED) {
                         const currentSpeed = Math.sqrt(currentSpeedSq);
@@ -947,6 +686,7 @@
                 velocity.x *= FRICTION;
                 velocity.z *= FRICTION;
                 
+                // Stop completely when velocity is near zero
                 if (Math.abs(velocity.x) < 0.005) velocity.x = 0;
                 if (Math.abs(velocity.z) < 0.005) velocity.z = 0;
             }
@@ -966,14 +706,11 @@
 
 
             // 6. Update Player Model position and rotation
-            playerModel.position.x = player.position.x;
-            playerModel.position.z = player.position.z;
-            playerModel.position.y = player.position.y + playerYOffset; 
-
+            playerModel.position.copy(player.position);
             if (horizontalInputActive) {
                 const horizontalVelocity = new THREE.Vector2(velocity.x, velocity.z);
                 if (horizontalVelocity.lengthSq() > 0.001) { 
-                    const angle = Math.atan2(horizontalVelocity.x, horizontalVelocity.z);
+                    const angle = Math.atan2(horizontalVelocity.x, horizontalVelocity.y);
                     player.rotationY = angle;
                 }
             }
@@ -992,6 +729,7 @@
                 camera.lookAt(player.position.x, player.position.y + thirdPersonHeightOffset, player.position.z);
                 
             } else {
+                // First Person (FP) View uses the smoothed cameraY
                 camera.position.x = player.position.x;
                 camera.position.z = player.position.z;
                 camera.position.y = cameraY; 
@@ -1002,7 +740,7 @@
             renderer.render(scene, camera);
         }
 
-        // --- UI and Input Handlers ---
+        // --- UI and Input Handlers (No Change) ---
         
         function toggleView() {
             isThirdPerson = !isThirdPerson;
@@ -1084,6 +822,7 @@
 
         function applyLookDelta(deltaX, deltaY, speed) {
             cameraLook.yaw -= deltaX * speed;
+            // Standard vertical look (Up swipe = Up view)
             cameraLook.pitch -= deltaY * speed; 
             
             cameraLook.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraLook.pitch));
@@ -1096,14 +835,6 @@
             // --- Keyboard Controls (Desktop) ---
             document.addEventListener('keydown', (e) => {
                 const key = e.key.toLowerCase();
-                
-                // Hotbar switching 1-9
-                const slotIndex = parseInt(e.key) - 1;
-                if (slotIndex >= 0 && slotIndex < 9) {
-                    switchActiveSlot(slotIndex);
-                    e.preventDefault(); 
-                }
-
                 if (key === 'w' || key === 'arrowup') controls.forward = 1;
                 if (key === 's' || key === 'arrowdown') controls.backward = 1;
                 if (key === 'a' || key === 'arrowleft') controls.left = 1;
@@ -1122,8 +853,6 @@
 
             // --- Mouse/Look & Action Controls (Desktop) ---
             canvasElement.addEventListener('mousedown', (e) => {
-                if (isDead) return;
-
                 if (e.pointerType === 'mouse' || container.clientWidth > 768) { 
                     if (e.button === 0) {
                         mineBlock();
@@ -1142,12 +871,12 @@
             });
 
             document.addEventListener('mousemove', (e) => {
-                if (document.pointerLockElement === canvasElement && !isDead) { 
+                if (document.pointerLockElement === canvasElement) { 
                     applyLookDelta(e.movementX, e.movementY, lookSpeed);
                 }
             });
 
-            // --- Mobile Touch Controls ---
+            // --- Mobile Touch Controls (Joystick & Look Pad) ---
             
             const isInsideJoystickArea = (clientX, clientY) => {
                 const dx = clientX - joystick.baseX;
@@ -1156,8 +885,6 @@
             };
 
             container.addEventListener('touchstart', (e) => {
-                if (isDead) return;
-
                 for (let i = 0; i < e.changedTouches.length; i++) {
                     const touch = e.changedTouches[i];
                     
@@ -1171,8 +898,7 @@
                         touch.clientX >= containerWidth / 2 && 
                         !touch.target.closest('#action-buttons') && 
                         !activeLookTouch &&
-                        !touch.target.closest('#view-toggle-btn') &&
-                        !touch.target.closest('#hotbar')
+                        !touch.target.closest('#view-toggle-btn')
                     ) {
                         activeLookTouch = {
                             identifier: touch.identifier,
@@ -1184,7 +910,6 @@
             }, { passive: true }); 
 
             container.addEventListener('touchmove', (e) => {
-                if (isDead) return;
                 e.preventDefault(); 
                 
                 for (let i = 0; i < e.changedTouches.length; i++) {
@@ -1241,7 +966,32 @@
             }, { passive: false });
 
             document.getElementById('view-toggle-btn').addEventListener('click', toggleView);
+
+            document.getElementById('active-block').addEventListener('click', cycleActiveBlock);
         }
+
+        function cycleActiveBlock() {
+            const typesArray = Object.values(blockTypes);
+            let currentIndex = typesArray.findIndex(type => type.name === activeBlockType.name);
+            currentIndex = (currentIndex + 1) % typesArray.length;
+            activeBlockType = typesArray[currentIndex];
+            updateActiveBlockDisplay();
+        }
+
+        function updateActiveBlockDisplay() {
+            const display = document.getElementById('active-block');
+            display.textContent = `Active: ${activeBlockType.name}`;
+            
+            // Determine the color for the HUD display border
+            let displayColor;
+            if (activeBlockType.key === 'GRASS') displayColor = `#${new THREE.Color(activeBlockType.colors.TOP).getHexString()}`;
+            else if (activeBlockType.key === 'GLASS') displayColor = `#${new THREE.Color(activeBlockType.color).getHexString()}`;
+            else if (activeBlockType.color) displayColor = `#${new THREE.Color(activeBlockType.color).getHexString()}`;
+            else displayColor = 'white';
+
+            display.style.borderColor = displayColor;
+        }
+
 
         // Start the application after the window loads
         window.onload = init;
