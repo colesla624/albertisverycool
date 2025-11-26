@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voxel Builder Game - Vertex Colors (V13)</title>
+    <title>Voxel Builder Game - Vertex Colors (V16)</title>
     <!-- Load Tailwind CSS for easy UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Load Three.js for 3D rendering (r128) -->
@@ -141,7 +141,7 @@
         });
         
         // Block Definitions (using hex colors)
-        const DIRT_COLOR = 0x6E3D27; // Updated deep brown color
+        const DIRT_COLOR = 0x6E3D27; // Deep brown color
         
         const blockTypes = {
             GRASS: { 
@@ -151,8 +151,8 @@
                 // Bi-color definition for grass block
                 colors: { 
                     TOP: 0x07A921,    // Vibrant forest green
-                    SIDE: DIRT_COLOR, // Updated dirt color for sides
-                    BOTTOM: DIRT_COLOR  // Updated dirt color for bottom
+                    SIDE: DIRT_COLOR, // Dirt color for sides
+                    BOTTOM: DIRT_COLOR  // Dirt color for bottom
                 } 
             },
             DIRT: { name: 'Dirt', key: 'DIRT', opaque: true, color: DIRT_COLOR },   // Uniform Deep Brown
@@ -185,13 +185,14 @@
         let velocity = new THREE.Vector3(0, 0, 0); 
         
         // Player Collision Box (AABB)
-        const playerHeight = 1.8;
+        const playerPhysicsHeight = 1.8; // The height used for physics collision checks
+        const playerVisualHeight = 1.4;  // SLIGHTLY SHORTER height for the 3D visual model (Was 1.6)
         const playerRadius = 0.3; 
-        const playerYOffset = -1.7; 
+        const playerYOffset = -1.7; // Distance from camera position (head) to physics feet (bottom of AABB)
         
         // Player state and constants
         const player = {
-            position: new THREE.Vector3(0, 10, 0), 
+            position: new THREE.Vector3(0, 10, 0), // Position is the Camera/Head position
             rotationY: 0, 
             onGround: false,
         };
@@ -243,6 +244,7 @@
 
         /**
          * Creates a flat-bottomed capsule (rounded cylinder) geometry for the player model.
+         * The model's local origin (0, 0, 0) is at the center of the cylinder base (the feet).
          */
         function createCapsuleGeometry(radius, height, radialSegments) {
             const material = new THREE.MeshStandardMaterial({ color: 0x33AFFF });
@@ -251,10 +253,12 @@
 
             const cylinder = new THREE.CylinderGeometry(radius, radius, cylinderHeightFlat, radialSegments, 1);
             const cylinderMesh = new THREE.Mesh(cylinder, material);
+            // Center the cylinder on the axis (it's base is at 0, its center is at cylinderHeightFlat / 2)
             cylinderMesh.position.y = cylinderHeightFlat / 2; 
 
             const topSphere = new THREE.SphereGeometry(radius, radialSegments, radialSegments / 2);
             const topMesh = new THREE.Mesh(topSphere, material);
+            // Place the center of the sphere at the top of the cylinder
             topMesh.position.y = cylinderHeightFlat; 
             
             const group = new THREE.Group();
@@ -268,7 +272,8 @@
          */
         function createPlayerModel() {
             playerModel = new THREE.Group();
-            const capsuleVisual = createCapsuleGeometry(playerRadius, playerHeight, 16);
+            // Use the slightly shorter visual height for the model
+            const capsuleVisual = createCapsuleGeometry(playerRadius, playerVisualHeight, 16);
             
             playerModel.add(capsuleVisual);
             
@@ -637,7 +642,7 @@
             updateActiveBlockDisplay();
 
             // 8. Find a safe starting position above the generated terrain
-            player.position.y = getHeight(0, 0) + playerHeight + 2; 
+            player.position.y = getHeight(0, 0) + playerPhysicsHeight + 2; 
 
             // 9. Start the game loop
             animate();
@@ -706,7 +711,11 @@
 
 
             // 6. Update Player Model position and rotation
-            playerModel.position.copy(player.position);
+            playerModel.position.x = player.position.x;
+            playerModel.position.z = player.position.z;
+            // The model's origin (y=0) is the feet. Align model's feet with the physics feet.
+            playerModel.position.y = player.position.y + playerYOffset; 
+
             if (horizontalInputActive) {
                 const horizontalVelocity = new THREE.Vector2(velocity.x, velocity.z);
                 if (horizontalVelocity.lengthSq() > 0.001) { 
